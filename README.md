@@ -22,20 +22,20 @@ All decisions go through a **Policy Aggregator** — a single if/elif router tha
 # 1. Clone and configure
 cp .env.example .env         # LLM_BACKEND=mock is the default (safe for demo)
 
-# 2. Start everything
-docker-compose up --build
+# 2. Activate virtual environment
+.\.venv\Scripts\Activate.ps1
 
-# Proxy:    http://localhost:8000
-# Dashboard: http://localhost:8501
+# 3. Start proxy backend (in one terminal)
+uvicorn proxy.main:app --reload --port 8000
 
-# 3. Run migrations (first time only)
-docker-compose exec proxy alembic upgrade head
+# 4. Start dashboard (in another terminal)
+streamlit run dashboard/app.py
 
-# 4. Run all 5 demo scenarios
+# 5. Run all 5 demo scenarios
 python demo_runner.py
 
-# 5. Run the golden test set (target: ≥ 90%)
-docker-compose exec proxy python -m pytest tests/test_golden_set.py -v
+# 6. Run the golden test set (target: ≥ 90%)
+python tests/run_golden_standalone.py
 ```
 
 ---
@@ -123,4 +123,3 @@ The same proxy, same checks, same dashboard — just real model responses instea
 | Storage | Postgres |
 | Embeddings | all-MiniLM-L6-v2 |
 | Dashboard | Streamlit |
-| Infra | docker-compose |

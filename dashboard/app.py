@@ -18,7 +18,7 @@ import plotly.graph_objects as go
 from datetime import datetime
 
 # ── Config ────────────────────────────────────────────────────────────────────
-PROXY_URL = "http://proxy:8000"
+PROXY_URL = "http://localhost:8000"
 ORG_ID = "demo"
 REFRESH_INTERVAL = 3  # seconds
 
@@ -78,30 +78,30 @@ st.markdown("""
 
 
 # ── Data fetching ─────────────────────────────────────────────────────────────
-@st.cache_data(ttl=REFRESH_INTERVAL)
+@st.cache_data(ttl=REFRESH_INTERVAL, show_spinner=False)
 def fetch_interactions(org_id: str, limit: int = 200) -> pd.DataFrame:
     try:
-        r = requests.get(f"{PROXY_URL}/v1/interactions", params={"org_id": org_id, "limit": limit}, timeout=3)
+        r = requests.get(f"{PROXY_URL}/v1/interactions", params={"org_id": org_id, "limit": limit}, timeout=0.5)
         data = r.json()
         return pd.DataFrame(data) if data else pd.DataFrame()
     except Exception:
         return pd.DataFrame()
 
 
-@st.cache_data(ttl=REFRESH_INTERVAL)
+@st.cache_data(ttl=REFRESH_INTERVAL, show_spinner=False)
 def fetch_flags(org_id: str, limit: int = 200) -> pd.DataFrame:
     try:
-        r = requests.get(f"{PROXY_URL}/v1/flags", params={"org_id": org_id, "limit": limit}, timeout=3)
+        r = requests.get(f"{PROXY_URL}/v1/flags", params={"org_id": org_id, "limit": limit}, timeout=0.5)
         data = r.json()
         return pd.DataFrame(data) if data else pd.DataFrame()
     except Exception:
         return pd.DataFrame()
 
 
-@st.cache_data(ttl=REFRESH_INTERVAL)
+@st.cache_data(ttl=REFRESH_INTERVAL, show_spinner=False)
 def fetch_policy(org_id: str, use_case: str) -> dict:
     try:
-        r = requests.get(f"{PROXY_URL}/policy/config/{org_id}/{use_case}", timeout=3)
+        r = requests.get(f"{PROXY_URL}/policy/config/{org_id}/{use_case}", timeout=0.5)
         return r.json()
     except Exception:
         return {}
@@ -151,7 +151,9 @@ with st.sidebar:
         st.cache_data.clear()
 
     st.markdown("---")
-    auto_refresh = st.checkbox("Auto-refresh (3s)", value=True)
+    if st.button("🔄 Refresh Data", use_container_width=True):
+        st.cache_data.clear()
+        st.rerun()
 
 
 # ── Header ────────────────────────────────────────────────────────────────────
@@ -299,8 +301,4 @@ with tab4:
             hide_index=True,
         )
 
-# ── Auto-refresh ──────────────────────────────────────────────────────────────
-if auto_refresh:
-    time.sleep(REFRESH_INTERVAL)
-    st.cache_data.clear()
-    st.rerun()
+
