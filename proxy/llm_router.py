@@ -34,7 +34,8 @@ class LLMResponse:
 async def complete(
     prompt: str,
     scenario_key: str | None = None,
-    model: str = "gpt-4o-mini",
+    model: str | None = None,
+    messages: list[dict] | None = None,
 ) -> LLMResponse:
     """
     Single entry point for all LLM completions.
@@ -45,11 +46,12 @@ async def complete(
                       (e.g. "scenario_1_hallucination"). If None, returns a
                       generic safe response.
         model: LiteLLM model string — only used in live mode.
+        messages: Optional standard OpenAI-style messages array.
     """
     if settings.llm_backend == "mock":
         return await _mock_complete(prompt, scenario_key)
     else:
-        return await _live_complete(prompt, model)
+        return await _live_complete(prompt, model or settings.llm_model, messages)
 
 
 async def _mock_complete(prompt: str, scenario_key: str | None) -> LLMResponse:
@@ -69,12 +71,15 @@ async def _mock_complete(prompt: str, scenario_key: str | None) -> LLMResponse:
     return LLMResponse(content=content, latency_ms=latency_ms, backend="mock")
 
 
-async def _live_complete(prompt: str, model: str) -> LLMResponse:
+async def _live_complete(prompt: str, model: str, messages: list[dict] | None = None) -> LLMResponse:
     import litellm
     t0 = time.perf_counter()
+    
+    msgs = messages if messages is not None else [{"role": "user", "content": prompt}]
+    
     response = await litellm.acompletion(
         model=model,
-        messages=[{"role": "user", "content": prompt}],
+        messages=msgs,
     )
     latency_ms = (time.perf_counter() - t0) * 1000
     content = response.choices[0].message.content or ""

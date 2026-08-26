@@ -15,9 +15,14 @@ class Settings(BaseSettings):
     # LLM backend: "mock" | "live"
     llm_backend: str = "mock"
 
-    # OpenAI / Anthropic (only needed when llm_backend=live)
+    # API Keys (only needed when llm_backend=live)
     openai_api_key: str = ""
     anthropic_api_key: str = ""
+    groq_api_key: str = ""
+    gemini_api_key: str = ""
+    
+    # Default model for live completions
+    llm_model: str = "gpt-4o-mini"
 
     # Postgres (Local fallbacks)
     postgres_host: str = "localhost"

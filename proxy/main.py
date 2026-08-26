@@ -129,8 +129,18 @@ async def chat(
 ):
     body = await request.json()
     prompt: str = body.get("prompt", "")
+    messages: list[dict] | None = body.get("messages")
+    
+    # If standard 'messages' array is used instead of a single 'prompt',
+    # extract the last user message to use as the prompt for Stage 1 checks
+    if messages and not prompt:
+        user_msgs = [m.get("content", "") for m in messages if m.get("role") == "user"]
+        if user_msgs:
+            prompt = user_msgs[-1]
+
     rag_context: str = body.get("rag_context", "")
     scenario_key: str | None = body.get("scenario_key")  # mock mode: pick fixture
+    override_response: str | None = body.get("override_response") # explicitly bypass LLM
     tool_name: str | None = body.get("tool_name")
     tool_args: dict = body.get("tool_args", {})
 
@@ -165,8 +175,12 @@ async def chat(
             },
         )
 
-    # ── LLM call ─────────────────────────────────────────────────────────────
-    llm_response = await complete(prompt, scenario_key=scenario_key)
+    # ── LLM call (or bypass) ──────────────────────────────────────────────────
+    if override_response is not None:
+        from proxy.llm_router import LLMResponse
+        llm_response = LLMResponse(content=override_response, latency_ms=42.0, backend="injected")
+    else:
+        llm_response = await complete(prompt, scenario_key=scenario_key, messages=messages)
 
     # ── Stage 2: Async checks (loop detection is sync if it's a tool call) ───
     s2_t0 = time.perf_counter()
@@ -180,9 +194,17 @@ async def chat(
     async def _toxicity() -> "CheckResult":
         return stage2_toxicity.run(llm_response.content, policy)
 
+    async def _pii_response() -> "CheckResult":
+        return stage1_pii.run(llm_response.content, policy)
+
+    async def _injection_response() -> "CheckResult":
+        return stage1_injection.run(llm_response.content, policy)
+
     s2_tasks.extend([
         stage2_grounding.run(llm_response.content, rag_context, policy),
         _toxicity(),
+        _pii_response(),
+        _injection_response(),
     ])
 
     s2_results: list[CheckResult] = list(await asyncio.gather(*s2_tasks))
