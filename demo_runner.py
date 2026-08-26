@@ -7,7 +7,7 @@ Usage:
     python demo_runner.py --scenario 3             # single scenario
     python demo_runner.py --scenario 5 --profile customer_support_bot
 
-Proxy must be running: docker-compose up proxy
+Proxy must be running: uvicorn proxy.main:app --reload --port 8000
 """
 
 import argparse
@@ -187,7 +187,7 @@ def main():
                 time.sleep(0.5)
 
     print(f"\n{'='*60}")
-    print("  Demo complete. Check Streamlit dashboard for live flags.")
+    print("  Demo complete. Open http://localhost:3000 to see live flags in the Monitor.")
     print(f"{'='*60}\n")
 
 

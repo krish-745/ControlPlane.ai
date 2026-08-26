@@ -20,14 +20,14 @@ All decisions go through a **Policy Aggregator** — a single if/elif router tha
 
 ```
 ControlPlane.ai/
-├── frontend/          # React 19 + TanStack Start + Tailwind v4 (replaces Streamlit)
+├── frontend/          # React 19 + TanStack Start + Tailwind v4
 │   ├── src/
 │   │   ├── lib/
 │   │   │   ├── api.ts               # Typed client for the FastAPI backend
 │   │   │   ├── controlplane-data.ts # Mock/fallback data
 │   │   │   └── utils.ts
 │   │   ├── routes/
-│   │   │   ├── index.tsx   # Live monitor — polls /v1/flags
+│   │   │   ├── index.tsx   # Live monitor — polls /v1/flags + /v1/interactions
 │   │   │   ├── audit.tsx   # Audit log — fetches /v1/interactions
 │   │   │   ├── policy.tsx  # Policy editor — reads/writes /policy/config
 │   │   │   └── trust.tsx   # Trust & metrics dashboard
@@ -40,7 +40,7 @@ ControlPlane.ai/
 ├── checks/            # Stage 1 & 2 check modules
 ├── db/                # SQLAlchemy models
 ├── alembic/           # Database migrations
-├── dashboard/         # Streamlit dashboard (legacy, kept for reference)
+├── dashboard/         # Streamlit dashboard (legacy reference only — not the primary UI)
 └── tests/
 ```
 
@@ -48,40 +48,39 @@ ControlPlane.ai/
 
 ## Quick Start
 
-### Backend (FastAPI)
+### 1. Backend (FastAPI)
 ```bash
-# 1. Configure environment
+# Configure environment
 cp .env.example .env         # LLM_BACKEND=mock is the default (safe for demo)
 
-# 2. Activate virtual environment
+# Activate virtual environment
 .\.venv\Scripts\Activate.ps1
 
-# 3. Start the proxy backend
+# Start the proxy backend
 uvicorn proxy.main:app --reload --port 8000
 ```
 
-### Frontend (React)
+### 2. Frontend (React)
 ```bash
 # In a second terminal, inside the frontend directory:
 cd frontend
-
-# Install dependencies
 npm install
-
-# Start the dev server (auto-proxies /api -> localhost:8000)
 npm run dev
 # → Opens at http://localhost:3000
 ```
 
-### Demo scenarios
+### 3. Demo scenarios
 ```bash
-# Run all 5 demo scenarios (from the project root)
+# Pre-seed the monitor with ambient traffic (run once before presenting)
+python seed_demo_traffic.py
+
+# Run all 5 demo scenarios (each adds a visible new row to the Monitor)
 python demo_runner.py
 
 # Run a single scenario
 python demo_runner.py --scenario 3
 
-# Run the golden test set (target: ≥ 90%)
+# Run the golden test set
 python tests/run_golden_standalone.py
 ```
 
@@ -98,6 +97,8 @@ python tests/run_golden_standalone.py
 | 3 | The Subtle Leak | Responsibility | Instant 403 before any LLM call |
 | 4 | The Overlap Case | Performance + Responsibility | One flag, two category tags |
 | 5 | The Policy Swap | Governance | Same input: block under `customer_support_bot`, escalate under `internal_knowledge_assistant` |
+
+> **Tip — Policy Swap (Scenario 5) is the most differentiated demo.** Most "AI oversight" projects show detection. Almost none show governance — the same flagged input behaving differently under two org policies live. Lead with this in Q&A when someone asks "how is this different from just adding a safety filter."
 
 ---
 
@@ -131,6 +132,8 @@ Headers: X-Org-Id, X-Use-Case, X-Agent-Id (optional)
 Body: { "prompt": "...", "rag_context": "...", "scenario_key": "...", "tool_name": "...", "tool_args": {} }
 ```
 
+Response includes measured `stage1.latency_ms` and `stage2.latency_ms` for every request — surfaced live in the Monitor dashboard.
+
 ### Policy management
 ```
 POST /policy/config                     # create/update
@@ -139,7 +142,7 @@ GET  /policy/config/{org_id}/{use_case} # fetch active
 
 ### Audit
 ```
-GET /v1/interactions?org_id=demo
+GET /v1/interactions?org_id=demo   # includes per-request stage latencies
 GET /v1/flags?org_id=demo
 GET /health
 ```
@@ -167,116 +170,14 @@ The same proxy, same checks, same frontend — just real model responses instead
 | Model router | LiteLLM (mock or live) |
 | Cache | Redis |
 | Storage | Postgres |
-| Embeddings | all-MiniLM-L6-v2 |
-| Legacy dashboard | Streamlit (kept for reference) |
-
+| Embeddings | all-MiniLM-L6-v2 (sentence-transformers) |
 
 ---
 
-## Quick Start
+## What we didn't build (and why)
 
-```bash
-# 1. Clone and configure
-cp .env.example .env         # LLM_BACKEND=mock is the default (safe for demo)
-
-# 2. Activate virtual environment
-.\.venv\Scripts\Activate.ps1
-
-# 3. Start proxy backend (in one terminal)
-uvicorn proxy.main:app --reload --port 8000
-
-# 4. Start dashboard (in another terminal)
-streamlit run dashboard/app.py
-
-# 5. Run all 5 demo scenarios
-python demo_runner.py
-
-# 6. Run the golden test set (target: ≥ 90%)
-python tests/run_golden_standalone.py
-```
-
----
-
-## Demo Scenarios
-
-| # | Name | Pillar | What to watch |
-|---|---|---|---|
-| 1 | The Confident Hallucination | Performance | Retraction banner in dashboard after stream |
-| 2 | The Runaway Agent | Cost | 4th call returns 429; cost counter increments |
-| 3 | The Subtle Leak | Responsibility | Instant 403 before any LLM call |
-| 4 | The Overlap Case | Performance + Responsibility | One flag, two category tags |
-| 5 | The Policy Swap | Governance | Same input: block under `customer_support_bot`, escalate under `internal_knowledge_assistant` |
-
-Run a single scenario:
-```bash
-python demo_runner.py --scenario 3
-```
-
----
-
-## Architecture
-
-```
-Client → [Stage 1: PII + Injection] → POLICY AGGREGATOR → LLM
-                                              │
-                                           BLOCK (403)
-                                              │
-                                           ALLOW → stream response
-                                              │
-                               [Stage 2: Grounding + Loop + Toxicity]
-                                              │
-                                    POLICY AGGREGATOR
-                                    │              │
-                                ESCALATE        LOG_OK
-                               (UI banner)    (Postgres)
-```
-
-Policy configs are stored in **Postgres** and cached in **Redis** (30s TTL). No proxy restart needed to change thresholds.
-
----
-
-## API
-
-### Chat proxy
-```
-POST /v1/chat
-Headers: X-Org-Id, X-Use-Case, X-Agent-Id (optional)
-Body: { "prompt": "...", "rag_context": "...", "scenario_key": "...", "tool_name": "...", "tool_args": {} }
-```
-
-### Policy management
-```
-POST /policy/config                     # create/update
-GET  /policy/config/{org_id}/{use_case} # fetch active
-```
-
-### Audit
-```
-GET /v1/interactions?org_id=demo
-GET /v1/flags?org_id=demo
-```
-
----
-
-## Switching to Live LLM Mode
-
-```bash
-# In .env:
-LLM_BACKEND=live
-OPENAI_API_KEY=sk-...
-```
-
-The same proxy, same checks, same dashboard — just real model responses instead of fixtures.
-
----
-
-## Stack
-
-| Component | Choice |
+| Omission | Reason |
 |---|---|
-| Proxy | FastAPI + asyncpg |
-| Model router | LiteLLM (mock or live) |
-| Cache | Redis |
-| Storage | Postgres |
-| Embeddings | all-MiniLM-L6-v2 |
-| Dashboard | Streamlit |
+| **Presidio / NER-based PII** | Regex patterns are sufficient for demo-scale; Microsoft Presidio would add a 200ms cold-start and a heavy dependency for marginal gain at this scope. A production system would swap the regex check for an NER pipeline here. |
+| **Mid-stream response patching** | Stage 2 runs post-response. True streaming interception would require buffering the token stream, adding latency on every request — a real architectural trade-off we explicitly chose not to make for the prototype. |
+| **Live regulatory rules sync** | Policy thresholds are configured manually via the Policy editor. Production would connect to a regulatory rules API (e.g. EU AI Act registry) and auto-update thresholds on rule changes. |

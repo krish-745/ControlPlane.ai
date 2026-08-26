@@ -4,7 +4,7 @@ import { X, Zap, ChevronRight, WifiOff } from "lucide-react";
 import { StatusBadge, CategoryPill } from "@/components/status-badge";
 import { cn } from "@/lib/utils";
 import { makeEvent, seedEvents, type MonitorEvent, type Status } from "@/lib/controlplane-data";
-import { fetchFlags, type ApiFlag } from "@/lib/api";
+import { fetchFlags, fetchInteractions, type ApiFlag, type ApiInteraction } from "@/lib/api";
 
 export const Route = createFileRoute("/")({
   head: () => ({
@@ -25,6 +25,7 @@ export const Route = createFileRoute("/")({
   component: MonitorPage,
 });
 
+
 const HIGHLIGHT: Record<Status, string> = {
   pass: "bg-pass-soft decoration-pass",
   patch: "bg-patch-soft decoration-patch",
@@ -32,8 +33,46 @@ const HIGHLIGHT: Record<Status, string> = {
   block: "bg-block-soft decoration-block",
 };
 
+// ── Build a lookup map from interaction_id → measured latencies ───────────────
+function buildLatencyMap(
+  interactions: ApiInteraction[],
+): Map<string, { stage1: number; stage2: number }> {
+  const map = new Map<string, { stage1: number; stage2: number }>();
+  for (const ix of interactions) {
+    map.set(ix.id, {
+      stage1: ix.stage1_latency_ms ?? 0,
+      stage2: ix.stage2_latency_ms ?? 0,
+    });
+  }
+  return map;
+}
+
+// ── Compute rolling average latency from the most recent N interactions ───────
+function avgLatency(
+  interactions: ApiInteraction[],
+  n = 20,
+): { stage1: number; stage2: number } {
+  const recent = interactions.slice(0, n);
+  if (recent.length === 0) return { stage1: 0, stage2: 0 };
+  const s1 = recent.filter((ix) => ix.stage1_latency_ms != null);
+  const s2 = recent.filter((ix) => ix.stage2_latency_ms != null);
+  return {
+    stage1:
+      s1.length > 0
+        ? Math.round(s1.reduce((a, ix) => a + (ix.stage1_latency_ms ?? 0), 0) / s1.length)
+        : 0,
+    stage2:
+      s2.length > 0
+        ? Math.round(s2.reduce((a, ix) => a + (ix.stage2_latency_ms ?? 0), 0) / s2.length)
+        : 0,
+  };
+}
+
 // ── Map an API flag to the MonitorEvent shape ─────────────────────────────────
-function flagToEvent(f: ApiFlag): MonitorEvent {
+function flagToEvent(
+  f: ApiFlag,
+  latencyMap: Map<string, { stage1: number; stage2: number }>,
+): MonitorEvent {
   const action = f.action_taken.toLowerCase();
   const status: Status =
     action === "block" ? "block"
@@ -53,23 +92,30 @@ function flagToEvent(f: ApiFlag): MonitorEvent {
 
   const ts = f.created_at ? f.created_at.slice(11, 19) : "--:--:--";
 
+  // Pull real latency from the joined interaction record
+  const latency = latencyMap.get(f.interaction_id) ?? { stage1: 0, stage2: 0 };
+
   return {
     id: f.id,
     ts,
-    useCase: f.interaction_id,  // we only have interaction_id from the flags endpoint
+    useCase: f.interaction_id, // fallback — overridden if we have the full interaction
     org: "live",
     status,
     categories,
     response: f.span ?? "(no span recorded)",
     flagged: f.span ?? "",
     reason: f.reason,
-    stage1: 0,
-    stage2: 0,
+    stage1: Math.round(latency.stage1),
+    stage2: Math.round(latency.stage2),
     confidence: f.confidence,
   };
 }
 
 function LatencyStrip({ stage1, stage2 }: { stage1: number; stage2: number }) {
+  const s1Display = stage1 > 0 ? `${stage1}ms` : "—";
+  const s2Display = stage2 > 0 ? `${stage2}ms` : "—";
+  const isLive = stage1 > 0 || stage2 > 0;
+
   return (
     <div className="flex flex-wrap items-center gap-x-6 gap-y-2 border-b border-border bg-surface-muted px-6 py-2 text-xs">
       <span className="inline-flex items-center gap-1.5 font-medium text-muted-foreground">
@@ -77,13 +123,21 @@ function LatencyStrip({ stage1, stage2 }: { stage1: number; stage2: number }) {
         Inline inspection
       </span>
       <span className="text-muted-foreground">
-        Stage 1 checks: <span className="tabular font-semibold text-foreground">{stage1 > 0 ? `${stage1}ms` : "12ms"}</span>
+        Stage 1 checks:{" "}
+        <span className={cn("tabular font-semibold", isLive ? "text-foreground" : "text-muted-foreground")}>
+          {s1Display}
+        </span>
       </span>
       <span className="h-3 w-px bg-border" />
       <span className="text-muted-foreground">
-        Stage 2 checks: <span className="tabular font-semibold text-foreground">{stage2 > 0 ? `${stage2}ms` : "210ms"}</span>
+        Stage 2 checks:{" "}
+        <span className={cn("tabular font-semibold", isLive ? "text-foreground" : "text-muted-foreground")}>
+          {s2Display}
+        </span>
       </span>
-      <span className="ml-auto text-muted-foreground">p99 budget 400ms</span>
+      <span className="ml-auto text-muted-foreground">
+        {isLive ? "rolling avg · last 20 requests" : "p99 budget 400ms"}
+      </span>
     </div>
   );
 }
@@ -95,26 +149,43 @@ function MonitorPage() {
   const [backendOnline, setBackendOnline] = useState<boolean | null>(null);
   const [avgLatencies, setAvgLatencies] = useState({ stage1: 0, stage2: 0 });
 
-  // Poll live flags from the backend every 3.8 s
+  // Poll live flags + interactions from the backend every 3.8 s
   useEffect(() => {
     let mockCounter = 0;
 
     async function poll() {
-      const liveFlags = await fetchFlags("demo", 40);
+      // Fetch both endpoints in parallel
+      const [liveFlags, liveInteractions] = await Promise.all([
+        fetchFlags("demo", 40),
+        fetchInteractions("demo", 40),
+      ]);
+
       if (liveFlags && liveFlags.length > 0) {
         setBackendOnline(true);
-        const liveEvents = liveFlags.map(flagToEvent);
+
+        // Build interaction latency lookup
+        const latencyMap = buildLatencyMap(liveInteractions ?? []);
+
+        // Map flags → events with real latency data
+        const liveEvents = liveFlags.map((f) => flagToEvent(f, latencyMap));
         setEvents(liveEvents);
+
+        // Update rolling average latency display
+        if (liveInteractions && liveInteractions.length > 0) {
+          setAvgLatencies(avgLatency(liveInteractions));
+        }
       } else if (liveFlags !== undefined) {
         // Backend responded but no flags yet — still online, show demo data
         setBackendOnline(true);
         mockCounter += 1;
-        setEvents((prev) => [makeEvent(mockCounter, new Date()), ...prev].slice(0, 40));
+        const at = new Date(Date.now() - Math.floor(Math.random() * 800));
+        setEvents((prev) => [makeEvent(mockCounter, at), ...prev].slice(0, 15));
       } else {
         // Fetch returned undefined — backend offline
         setBackendOnline(false);
         mockCounter += 1;
-        setEvents((prev) => [makeEvent(mockCounter, new Date()), ...prev].slice(0, 40));
+        const at = new Date(Date.now() - Math.floor(Math.random() * 1500));
+        setEvents((prev) => [makeEvent(mockCounter, at), ...prev].slice(0, 15));
       }
     }
 
@@ -289,8 +360,16 @@ function DetailPanel({ event, onClose }: { event: MonitorEvent; onClose: () => v
             <dd className="mt-1 text-muted-foreground">{event.reason}</dd>
           </div>
           <div className="grid grid-cols-3 gap-3 border-t border-border pt-3">
-            <Metric label="Stage 1" value={event.stage1 > 0 ? `${event.stage1}ms` : "—"} />
-            <Metric label="Stage 2" value={event.stage2 > 0 ? `${event.stage2}ms` : "—"} />
+            <Metric
+              label="Stage 1"
+              value={event.stage1 > 0 ? `${event.stage1}ms` : "—"}
+              live={event.stage1 > 0}
+            />
+            <Metric
+              label="Stage 2"
+              value={event.stage2 > 0 ? `${event.stage2}ms` : "—"}
+              live={event.stage2 > 0}
+            />
             <Metric label="Confidence" value={event.confidence.toFixed(2)} />
           </div>
         </dl>
@@ -299,11 +378,11 @@ function DetailPanel({ event, onClose }: { event: MonitorEvent; onClose: () => v
   );
 }
 
-function Metric({ label, value }: { label: string; value: string }) {
+function Metric({ label, value, live = false }: { label: string; value: string; live?: boolean }) {
   return (
     <div>
       <p className="text-xs text-muted-foreground">{label}</p>
-      <p className="tabular mt-0.5 text-sm font-semibold">{value}</p>
+      <p className={cn("tabular mt-0.5 text-sm font-semibold", live && "text-primary")}>{value}</p>
     </div>
   );
 }

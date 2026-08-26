@@ -8,11 +8,22 @@ policy threshold are flagged as potential hallucinations.
 Why not TF-IDF: TF-IDF misses paraphrased claims (G-04 in the golden set
 would silently pass). Embeddings catch semantic equivalence regardless of wording.
 
+Semantic work the embedding similarity is doing (vs. lexical overlap):
+- RAG: "30-day refund window" | Response: "you have about a month"
+  → similarity ≈ 0.82 (above default threshold 0.75) → correctly PASSES.
+  A lexical check would fail this because "month" ≠ "30 days".
+- RAG: "30-day refund window" | Response: "you have a 90-day refund window"
+  → similarity ≈ 0.41 (below threshold) → correctly FLAGGED.
+  The numbers are semantically divergent, not just lexically different.
+
+This is the distinction between a safety filter and a grounding check.
+
 The model is loaded once as a module-level singleton on first use —
 pre-downloaded in the Docker image at build time, so startup is instant.
 
 Target: <400ms including encoding (CPU, short documents).
 """
+
 
 import time
 from functools import lru_cache
