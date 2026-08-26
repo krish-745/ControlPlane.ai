@@ -9,14 +9,23 @@ load_dotenv()
 config = context.config
 
 # Override sqlalchemy.url from environment
-config.set_main_option(
-    "sqlalchemy.url",
-    f"postgresql+asyncpg://{os.getenv('POSTGRES_USER', 'controlplane')}:"
-    f"{os.getenv('POSTGRES_PASSWORD', 'controlplane')}@"
-    f"{os.getenv('POSTGRES_HOST', 'localhost')}:"
-    f"{os.getenv('POSTGRES_PORT', '5432')}/"
-    f"{os.getenv('POSTGRES_DB', 'controlplane')}"
-)
+database_url = os.getenv("DATABASE_URL")
+if database_url:
+    if database_url.startswith("postgres://"):
+        database_url = database_url.replace("postgres://", "postgresql+asyncpg://", 1)
+    elif database_url.startswith("postgresql://"):
+        database_url = database_url.replace("postgresql://", "postgresql+asyncpg://", 1)
+    
+    config.set_main_option("sqlalchemy.url", database_url)
+else:
+    config.set_main_option(
+        "sqlalchemy.url",
+        f"postgresql+asyncpg://{os.getenv('POSTGRES_USER', 'controlplane')}:"
+        f"{os.getenv('POSTGRES_PASSWORD', 'controlplane')}@"
+        f"{os.getenv('POSTGRES_HOST', 'localhost')}:"
+        f"{os.getenv('POSTGRES_PORT', '5432')}/"
+        f"{os.getenv('POSTGRES_DB', 'controlplane')}"
+    )
 
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
