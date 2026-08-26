@@ -180,19 +180,22 @@ async def chat(
         from proxy.llm_router import LLMResponse
         llm_response = LLMResponse(content=override_response, latency_ms=42.0, backend="injected")
     else:
-        llm_response = await complete(prompt, scenario_key=scenario_key, messages=messages)
+        llm_response = await complete(prompt, scenario_key=scenario_key, messages=messages, rag_context=rag_context)
 
     # ── Stage 2: Async checks (loop detection is sync if it's a tool call) ───
     s2_t0 = time.perf_counter()
     s2_tasks = []
 
     if tool_name and agent_id:
+        print(f"[DEBUG] Loop check: agent={agent_id}, tool={tool_name}, args={tool_args}")
         s2_tasks.append(
             stage2_loop.run(agent_id, tool_name, tool_args, policy)
         )
+    else:
+        print(f"[DEBUG] Loop check SKIPPED: tool_name={tool_name!r}, agent_id={agent_id!r}")
 
     async def _toxicity() -> "CheckResult":
-        return stage2_toxicity.run(llm_response.content, policy)
+        return await stage2_toxicity.run(llm_response.content, policy)
 
     async def _pii_response() -> "CheckResult":
         return stage1_pii.run(llm_response.content, policy)

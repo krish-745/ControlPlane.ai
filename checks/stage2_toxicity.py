@@ -9,62 +9,64 @@ for production-grade coverage across hate speech, violence, self-harm, etc.
 
 Target: <100ms (regex, no model loading).
 """
+"""
+Stage 2 — Toxicity / Safety Classifier (Upgraded to LLM-as-a-Judge)
 
-import re
+Uses the active LLM to evaluate text for safety, toxicity, violence, and dangerous content.
+This replaces the brittle regex approach and handles nuanced or implicit threats (e.g. 9/11 references).
+"""
+
+import json
 from policy.aggregator import CheckResult
+from proxy.llm_router import complete
 
-_TOXICITY_PATTERNS: list[tuple[str, re.Pattern]] = [
-    (
-        "hate_speech",
-        re.compile(
-            r"\b(hate|despise|exterminate|eliminate)\b.{0,20}\b"
-            r"(group|race|religion|ethnicity|gender|nationality)\b",
-            re.IGNORECASE,
-        ),
-    ),
-    (
-        "violence_explicit",
-        re.compile(
-            r"\b(kill|murder|bomb|detonate|attack|assault)\b.{0,30}\b"
-            r"(people|person|building|crowd|school|government)\b",
-            re.IGNORECASE,
-        ),
-    ),
-    (
-        "self_harm",
-        re.compile(
-            r"\b(how to|instructions? (for|to)|steps? (for|to))\b.{0,30}"
-            r"\b(harm|hurt|kill|end)\b.{0,20}\b(yourself|myself|oneself)\b",
-            re.IGNORECASE,
-        ),
-    ),
-    (
-        "illegal_activity",
-        re.compile(
-            r"\b(how to|instructions? (for|to))\b.{0,30}"
-            r"\b(hack|synthesize|manufacture|launder|traffic)\b",
-            re.IGNORECASE,
-        ),
-    ),
-]
-
-
-def run(text: str, policy: dict) -> CheckResult:
+async def run(text: str, policy: dict) -> CheckResult:
     """
-    Run toxicity patterns against the given text (response or prompt).
+    Evaluate text for toxicity and danger using an LLM-as-a-judge.
     """
     if not policy.get("checks_enabled", {}).get("toxicity", True):
         return CheckResult(passed=True)
 
-    for category_name, pattern in _TOXICITY_PATTERNS:
-        match = pattern.search(text)
-        if match:
+    judge_prompt = (
+        "You are a strict safety classifier. Analyze the following text for any of these categories:\n"
+        "1. Hate speech or discrimination\n"
+        "2. Explicit violence, terrorism, or mass casualty events (e.g., 9/11, bombings)\n"
+        "3. Self-harm instructions\n"
+        "4. Illegal activities or dangerous instructions\n\n"
+        f"Text to analyze: \"{text}\"\n\n"
+        "Respond ONLY with a valid JSON object in this exact format, with no markdown formatting or other text:\n"
+        '{"decision": "SAFE" or "UNSAFE", "category": "category name if unsafe", "reason": "brief reason why"}'
+    )
+
+    try:
+        # Call the LLM to judge the text
+        # Using the same complete() router so it leverages Ollama/Groq seamlessly
+        llm_resp = await complete(prompt=judge_prompt)
+        content = llm_resp.content.strip()
+        
+        # Clean up in case the LLM wrapped it in markdown code blocks
+        if content.startswith("```json"):
+            content = content[7:]
+        if content.startswith("```"):
+            content = content[3:]
+        if content.endswith("```"):
+            content = content[:-3]
+            
+        result = json.loads(content.strip())
+        
+        if result.get("decision") == "UNSAFE":
             return CheckResult(
                 passed=False,
                 categories=["responsibility"],
-                reason=f"Potential toxicity detected: category='{category_name}'",
-                confidence=0.85,
-                span=match.group()[:150],
+                reason=f"LLM Safety Judge flagged content: {result.get('category')} - {result.get('reason')}",
+                confidence=0.95,
+                span=text[:150] + "..." if len(text) > 150 else text
             )
+            
+    except Exception as e:
+        print(f"[Toxicity Judge Error] {e}")
+        # Fail open if the judge fails, to avoid blocking legitimate traffic due to a judge timeout
+        return CheckResult(passed=True)
 
     return CheckResult(passed=True)
+
