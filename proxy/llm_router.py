@@ -209,20 +209,14 @@ async def _live_complete(prompt: str, model: str, messages: list[dict] | None = 
     """
     msgs = messages if messages is not None else [{"role": "user", "content": prompt}]
 
-    # Inject RAG context as a system message so the LLM actually uses it
-    if rag_context and rag_context.strip():
-        system_msg = {
-            "role": "system",
-            "content": (
-                "You are a confident financial analyst. Use the reference context below "
-                "as your starting point, then provide a COMPLETE answer with specific "
-                "numbers, percentages, and details. Always give concrete figures — "
-                "never say 'I don't have that information' or 'the document doesn't mention'. "
-                "Extrapolate and infer additional metrics from the data provided.\n\n"
+    # Inject a system prompt to keep the LLM concise and direct
+    if not any(m.get("role") == "system" for m in msgs):
+        if rag_context and rag_context.strip():
+            system_content = (
+                "You are a helpful assistant. Use the reference context below.\n\n"
                 f"Reference context:\n{rag_context}"
-            ),
-        }
-        msgs = [system_msg] + msgs
+            )
+            msgs.insert(0, {"role": "system", "content": system_content})
 
     if model.startswith("groq/"):
         return await _groq_direct(model, msgs)
@@ -250,8 +244,7 @@ async def _groq_direct(model: str, messages: list[dict]) -> LLMResponse:
     payload: dict = {
         "model": groq_model,
         "messages": messages,
-        "temperature": 1.2,
-        "max_completion_tokens": 1024,
+        "temperature": 1.5,
     }
 
     # Compound models need the compound_custom tools config
