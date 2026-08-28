@@ -36,10 +36,15 @@ async def lifespan(app: FastAPI):
     # Seed demo profiles on startup
     async with AsyncSessionLocal() as db:
         await seed_demo_profiles(db)
-    # Pre-warm the embedding model (already downloaded in Docker)
+    # Pre-warm the embedding model and toxicity classifier
     if settings.app_env != "test":
         from checks.stage2_grounding import _get_model
-        await asyncio.get_event_loop().run_in_executor(None, _get_model)
+        from checks.stage2_toxicity import _get_classifier
+        g_model = _get_model()
+        t_model = _get_classifier()
+        # Dummy forward pass to fully pre-warm the models on main thread
+        g_model.encode(["warmup"])
+        t_model("warmup")
     yield
     await close_redis()
 
@@ -144,7 +149,8 @@ async def chat(
     tool_name: str | None = body.get("tool_name")
     tool_args: dict = body.get("tool_args", {})
 
-    org_id, use_case, agent_id = _extract_context(request)
+    org_id, use_case, header_agent_id = _extract_context(request)
+    agent_id = header_agent_id or body.get("agent_id")
     policy = await get_active_policy(org_id, use_case, db)
     interaction_id = uuid.uuid4()
 
@@ -182,35 +188,31 @@ async def chat(
     else:
         llm_response = await complete(prompt, scenario_key=scenario_key, messages=messages, rag_context=rag_context)
 
-    # ── Stage 2: Async checks (loop detection is sync if it's a tool call) ───
+    # ── Stage 2: Checks ───
+    # Run sequentially on main thread. No run_in_executor and no asyncio.gather
+    # to avoid PyTorch / Windows thread contention and context-switching overhead.
     s2_t0 = time.perf_counter()
-    s2_tasks = []
+    s2_results: list[CheckResult] = []
 
     if tool_name and agent_id:
-        print(f"[DEBUG] Loop check: agent={agent_id}, tool={tool_name}, args={tool_args}")
-        s2_tasks.append(
-            stage2_loop.run(agent_id, tool_name, tool_args, policy)
-        )
-    else:
-        print(f"[DEBUG] Loop check SKIPPED: tool_name={tool_name!r}, agent_id={agent_id!r}")
+        s2_results.append(await stage2_loop.run(agent_id, tool_name, tool_args, policy))
 
-    async def _toxicity() -> "CheckResult":
-        return await stage2_toxicity.run(llm_response.content, policy)
+    s2_results.append(await stage2_grounding.run(llm_response.content, rag_context, policy))
+    s2_results.append(await stage2_toxicity.run(llm_response.content, policy))
+    
+    # Stage 1 response checks (sync functions)
+    t0_pii = time.perf_counter()
+    pii_res = stage1_pii.run(llm_response.content, policy)
+    pii_res.check_name = "pii"
+    pii_res.latency_ms = (time.perf_counter() - t0_pii) * 1000
+    s2_results.append(pii_res)
+    
+    t0_inj = time.perf_counter()
+    inj_res = stage1_injection.run(llm_response.content, policy)
+    inj_res.check_name = "injection"
+    inj_res.latency_ms = (time.perf_counter() - t0_inj) * 1000
+    s2_results.append(inj_res)
 
-    async def _pii_response() -> "CheckResult":
-        return stage1_pii.run(llm_response.content, policy)
-
-    async def _injection_response() -> "CheckResult":
-        return stage1_injection.run(llm_response.content, policy)
-
-    s2_tasks.extend([
-        stage2_grounding.run(llm_response.content, rag_context, policy),
-        _toxicity(),
-        _pii_response(),
-        _injection_response(),
-    ])
-
-    s2_results: list[CheckResult] = list(await asyncio.gather(*s2_tasks))
     s2_latency = (time.perf_counter() - s2_t0) * 1000
 
     s2_agg = aggregate_stage2(s2_results, policy)
@@ -233,6 +235,10 @@ async def chat(
         "stage2": {
             "decision": s2_agg.decision.value,
             "latency_ms": round(s2_latency, 2),
+            "check_latencies_ms": {
+                r.check_name: round(r.latency_ms, 2) if r.latency_ms is not None else 0
+                for r in s2_results if r.check_name
+            },
             "flags": [
                 {
                     "categories": f.categories,

@@ -38,7 +38,9 @@ async def run(
 
     max_calls: int = policy.get("thresholds", {}).get("loop_count_max", 3)
     args_hash = _hash_args(tool_args)
-
+    import time
+    t0 = time.perf_counter()
+    
     count = await increment_loop_counter(agent_id, tool_name, args_hash)
 
     if count > max_calls:
@@ -51,6 +53,8 @@ async def run(
             ),
             confidence=1.0,
             span=f"{tool_name}({json.dumps(tool_args)[:80]})",
+            check_name="loop",
+            latency_ms=(time.perf_counter() - t0) * 1000
         )
 
-    return CheckResult(passed=True)
+    return CheckResult(passed=True, check_name="loop", latency_ms=(time.perf_counter() - t0) * 1000)

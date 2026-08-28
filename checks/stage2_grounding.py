@@ -37,6 +37,9 @@ def _get_model():
     global _model
     if _model is None:
         from sentence_transformers import SentenceTransformer
+        import torch
+        
+        torch.set_num_threads(1)
         _model = SentenceTransformer("all-MiniLM-L6-v2")
     return _model
 
@@ -54,9 +57,9 @@ async def run(response: str, rag_context: str, policy: dict) -> CheckResult:
     Returns a failing CheckResult if any sentence scores below threshold.
     """
     if not policy.get("checks_enabled", {}).get("grounding", True):
-        return CheckResult(passed=True)
+        return CheckResult(passed=True, check_name="grounding", latency_ms=0)
     if not rag_context or not rag_context.strip():
-        return CheckResult(passed=True)  # No context to ground against
+        return CheckResult(passed=True, check_name="grounding", latency_ms=0)  # No context to ground against
 
     t0 = time.perf_counter()
     threshold: float = policy.get("thresholds", {}).get(
@@ -73,13 +76,9 @@ async def run(response: str, rag_context: str, policy: dict) -> CheckResult:
     if not response_sentences or not context_sentences:
         return CheckResult(passed=True)
 
-    # Encode all at once for efficiency
-    response_embeddings = await asyncio.get_event_loop().run_in_executor(
-        None, lambda: model.encode(response_sentences, normalize_embeddings=True)
-    )
-    context_embeddings = await asyncio.get_event_loop().run_in_executor(
-        None, lambda: model.encode(context_sentences, normalize_embeddings=True)
-    )
+    # Encode directly on the main thread
+    response_embeddings = model.encode(response_sentences, normalize_embeddings=True)
+    context_embeddings = model.encode(context_sentences, normalize_embeddings=True)
 
     # For each response sentence, find max similarity to any context sentence
     sim_matrix = np.dot(response_embeddings, context_embeddings.T)  # (R, C)
@@ -106,6 +105,8 @@ async def run(response: str, rag_context: str, policy: dict) -> CheckResult:
             ),
             confidence=round(1.0 - worst_score, 3),
             span=worst_sentence[:200],
+            check_name="grounding",
+            latency_ms=elapsed_ms
         )
 
-    return CheckResult(passed=True)
+    return CheckResult(passed=True, check_name="grounding", latency_ms=elapsed_ms)

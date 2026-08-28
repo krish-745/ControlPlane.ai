@@ -29,6 +29,8 @@ class CheckResult:
     reason: str = ""
     confidence: float | None = None
     span: str | None = None
+    check_name: str | None = None
+    latency_ms: float | None = None
 
 
 @dataclass

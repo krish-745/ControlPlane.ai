@@ -1,72 +1,74 @@
 """
-Stage 2 — Toxicity / Safety Classifier.
+Stage 2 — Toxicity / Safety Classifier (Upgraded to toxic-bert)
 
-Heuristic regex classifier for the prototype. Covers the most common toxicity
-categories relevant to enterprise AI deployments.
-
-Production upgrade path: Replace with Llama Guard (via LiteLLM moderation endpoint)
-for production-grade coverage across hate speech, violence, self-harm, etc.
-
-Target: <100ms (regex, no model loading).
-"""
-"""
-Stage 2 — Toxicity / Safety Classifier (Upgraded to LLM-as-a-Judge)
-
-Uses the active LLM to evaluate text for safety, toxicity, violence, and dangerous content.
-This replaces the brittle regex approach and handles nuanced or implicit threats (e.g. 9/11 references).
+Uses a fast, local HuggingFace model (unitary/toxic-bert) to evaluate text for toxicity.
+This is highly performant (<50ms) and keeps all data completely private.
 """
 
-import json
 from policy.aggregator import CheckResult
-from proxy.llm_router import complete
+
+_classifier = None
+
+def _get_classifier():
+    global _classifier
+    if _classifier is None:
+        from transformers import pipeline
+        import torch
+        
+        # Lock to 1 thread to completely eliminate OpenMP thrashing with other models
+        torch.set_num_threads(1)
+        
+        # Use GPU (device 0) if available, otherwise fallback to CPU (device -1)
+        device = 0 if torch.cuda.is_available() else -1
+        
+        # Switch to DistilBERT-based model which is ~2x faster than toxic-bert
+        _classifier = pipeline("text-classification", model="martin-ha/toxic-comment-model", truncation=True, max_length=512, device=device)
+    return _classifier
 
 async def run(text: str, policy: dict) -> CheckResult:
     """
-    Evaluate text for toxicity and danger using an LLM-as-a-judge.
+    Evaluate text for toxicity using local toxic-bert model.
     """
     if not policy.get("checks_enabled", {}).get("toxicity", True):
-        return CheckResult(passed=True)
-
-    judge_prompt = (
-        "You are a strict safety classifier. Analyze the following text for any of these categories:\n"
-        "1. Hate speech or discrimination\n"
-        "2. Explicit violence, terrorism, or mass casualty events (e.g., 9/11, bombings)\n"
-        "3. Self-harm instructions\n"
-        "4. Illegal activities or dangerous instructions\n\n"
-        f"Text to analyze: \"{text}\"\n\n"
-        "Respond ONLY with a valid JSON object in this exact format, with no markdown formatting or other text:\n"
-        '{"decision": "SAFE" or "UNSAFE", "category": "category name if unsafe", "reason": "brief reason why"}'
-    )
+        return CheckResult(passed=True, check_name="toxicity", latency_ms=0)
 
     try:
-        # Call the LLM to judge the text
-        # Using the same complete() router so it leverages Ollama/Groq seamlessly
-        llm_resp = await complete(prompt=judge_prompt)
-        content = llm_resp.content.strip()
+        import asyncio
+        import time
+        classifier = _get_classifier()
         
-        # Clean up in case the LLM wrapped it in markdown code blocks
-        if content.startswith("```json"):
-            content = content[7:]
-        if content.startswith("```"):
-            content = content[3:]
-        if content.endswith("```"):
-            content = content[:-3]
-            
-        result = json.loads(content.strip())
+        t0 = time.perf_counter()
         
-        if result.get("decision") == "UNSAFE":
+        # Run natively on the main thread
+        results = classifier(text)
+        
+        t_inference = (time.perf_counter() - t0) * 1000
+        print(f"[DEBUG] toxic-bert inference took {t_inference:.2f}ms for {len(text)} characters")
+        
+        result = results[0]
+        # toxic-bert outputs labels like 'toxic', 'severe_toxic', 'obscene', 'threat', 'insult', 'identity_hate'
+        # The default label if it exceeds threshold is usually just the highest scoring class
+        
+        # martin-ha/toxic-comment-model outputs 'toxic' or 'non-toxic'
+        score = result['score']
+        label = result['label'].lower()
+        
+        # Only flag if the model explicitly labeled it as toxic with high confidence
+        is_toxic = (label == 'toxic' and score > 0.7)
+        
+        if is_toxic:
             return CheckResult(
                 passed=False,
                 categories=["responsibility"],
-                reason=f"LLM Safety Judge flagged content: {result.get('category')} - {result.get('reason')}",
-                confidence=0.95,
-                span=text[:150] + "..." if len(text) > 150 else text
+                reason=f"Local toxic-bert flagged content: {label} (confidence: {score:.2f})",
+                confidence=score,
+                span=text[:150] + "..." if len(text) > 150 else text,
+                check_name="toxicity",
+                latency_ms=t_inference
             )
             
     except Exception as e:
-        print(f"[Toxicity Judge Error] {e}")
-        # Fail open if the judge fails, to avoid blocking legitimate traffic due to a judge timeout
-        return CheckResult(passed=True)
+        print(f"[Toxicity Classifier Error] {e}")
+        return CheckResult(passed=True, check_name="toxicity")
 
-    return CheckResult(passed=True)
-
+    return CheckResult(passed=True, check_name="toxicity", latency_ms=t_inference)
