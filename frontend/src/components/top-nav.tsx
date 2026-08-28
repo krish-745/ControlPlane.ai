@@ -1,6 +1,6 @@
-﻿import { useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { Link } from "@tanstack/react-router";
-import { ShieldCheck, WifiOff } from "lucide-react";
+import { WifiOff } from "lucide-react";
 import { fetchHealth } from "@/lib/api";
 
 const TABS = [
@@ -36,10 +36,8 @@ export function TopNav() {
     <header className="sticky top-0 z-40 border-b border-border bg-surface/85 backdrop-blur">
       <div className="mx-auto flex h-14 max-w-[1400px] items-center gap-8 px-6">
         <Link to="/" className="flex items-center gap-2">
-          <span className="flex size-7 items-center justify-center rounded-md bg-primary text-primary-foreground">
-            <ShieldCheck className="size-4" />
-          </span>
-          <span className="text-[15px] font-semibold tracking-tight">ControlPlane</span>
+          <img src="/favicon.jpg" alt="Logo" className="size-7 rounded-md object-cover" />
+          <span className="text-[15px] font-semibold tracking-tight">ControlPlane.ai</span>
         </Link>
 
         <nav className="flex h-full items-stretch gap-1">
@@ -63,9 +61,9 @@ export function TopNav() {
           {health === "ok" ? (
             <span className="inline-flex items-center gap-1.5 rounded-full border border-pass/25 bg-pass-soft px-2.5 py-1 font-medium text-pass-foreground">
               <span className="size-1.5 animate-pulse rounded-full bg-pass" />
-              Gateway healthy
+              Gateway Healthy
               {backend && (
-                <span className="hidden sm:inline opacity-70">· {backend}</span>
+                <span className="hidden sm:inline opacity-70 capitalize">· {backend}</span>
               )}
             </span>
           ) : health === "offline" ? (
@@ -79,7 +77,6 @@ export function TopNav() {
               Connecting…
             </span>
           )}
-          <span className="hidden sm:inline">v2.4.1</span>
         </div>
       </div>
     </header>

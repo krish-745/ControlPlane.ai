@@ -104,7 +104,7 @@ async def _persist_interaction(
             stage2_latency_ms=stage2_latency_ms,
             llm_backend=llm_backend,
         )
-        db.add(interaction)
+        await db.merge(interaction)
         for result in flags:
             flag = Flag(
                 id=uuid.uuid4(),
@@ -449,3 +449,7 @@ async def list_flags(
         }
         for r in rows
     ]
+
+@app.get("/health")
+async def health():
+    return {"status": "ok"}

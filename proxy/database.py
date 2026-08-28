@@ -5,8 +5,9 @@ from proxy.config import settings
 
 engine = create_async_engine(
     settings.postgres_url,
-    pool_size=10,
-    max_overflow=20,
+    pool_size=5,
+    max_overflow=5,
+    pool_timeout=30,
     echo=(settings.app_env == "development"),
 )
 

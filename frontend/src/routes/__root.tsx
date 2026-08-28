@@ -75,7 +75,7 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
     meta: [
       { charSet: "utf-8" },
       { name: "viewport", content: "width=device-width, initial-scale=1" },
-      { title: "ControlPlane — Real-time AI Oversight" },
+      { title: "ControlPlane.ai" },
       {
         name: "description",
         content:
@@ -90,6 +90,10 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
       { name: "twitter:card", content: "summary_large_image" },
     ],
     links: [
+      {
+        rel: "icon",
+        href: "/favicon.jpg"
+      },
       {
         rel: "stylesheet",
         href: appCss,

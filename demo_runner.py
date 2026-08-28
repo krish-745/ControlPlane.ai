@@ -175,11 +175,18 @@ def print_result(response: httpx.Response, call_num: int = 1, profile: str = Non
 def run_scenario(num: int, scenario: dict, client: httpx.Client):
     print_header(num, scenario)
 
+    def _post(payload, headers):
+        p = payload.copy()
+        if "override_response" in p:
+            p["ai_response"] = p.pop("override_response")
+            return client.post(f"{PROXY_URL}/v1/evaluate", json=p, headers=headers)
+        return client.post(f"{PROXY_URL}/v1/chat", json=p, headers=headers)
+
     if num == 5:
         # Policy swap: run same payload under two profiles
         for profile in scenario.get("profiles", []):
             headers = {"X-Org-Id": "demo", "X-Use-Case": profile, "Content-Type": "application/json"}
-            r = client.post(f"{PROXY_URL}/v1/chat", json=scenario["payload"], headers=headers)
+            r = _post(scenario["payload"], headers)
             print_result(r, profile=profile)
         return
 
@@ -187,7 +194,7 @@ def run_scenario(num: int, scenario: dict, client: httpx.Client):
         # Semantic flex variants
         headers = {**scenario.get("headers", {}), "Content-Type": "application/json"}
         for variant in scenario["variants"]:
-            r = client.post(f"{PROXY_URL}/v1/chat", json=variant["payload"], headers=headers)
+            r = _post(variant["payload"], headers)
             print_result(r, variant_label=variant["label"])
         return
 
@@ -195,7 +202,7 @@ def run_scenario(num: int, scenario: dict, client: httpx.Client):
     repeat = scenario.get("repeat", 1)
 
     for i in range(1, repeat + 1):
-        r = client.post(f"{PROXY_URL}/v1/chat", json=scenario["payload"], headers=headers)
+        r = _post(scenario["payload"], headers)
         print_result(r, call_num=i)
         if r.status_code in (403, 429):
             break

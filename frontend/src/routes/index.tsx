@@ -1,6 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useMemo, useState } from "react";
-import { X, Zap, ChevronRight, WifiOff } from "lucide-react";
+import { X, Zap, ChevronRight, WifiOff, Info } from "lucide-react";
 import { StatusBadge, CategoryPill } from "@/components/status-badge";
 import { cn } from "@/lib/utils";
 import { makeEvent, seedEvents, type MonitorEvent, type Status } from "@/lib/controlplane-data";
@@ -9,7 +9,7 @@ import { fetchFlags, fetchInteractions, type ApiFlag, type ApiInteraction } from
 export const Route = createFileRoute("/")({
   head: () => ({
     meta: [
-      { title: "Monitor — ControlPlane AI Oversight" },
+      { title: "ControlPlane.ai" },
       {
         name: "description",
         content:
@@ -33,15 +33,24 @@ const HIGHLIGHT: Record<Status, string> = {
   block: "bg-block-soft decoration-block",
 };
 
+// ── Format use case string to be human readable (snake_case -> Title Case) ──
+function formatUseCase(uc: string): string {
+  return uc
+    .split("_")
+    .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+    .join(" ");
+}
+
 // ── Build a lookup map from interaction_id → measured latencies ───────────────
 function buildLatencyMap(
   interactions: ApiInteraction[],
-): Map<string, { stage1: number; stage2: number }> {
-  const map = new Map<string, { stage1: number; stage2: number }>();
+): Map<string, { stage1: number; stage2: number; use_case?: string }> {
+  const map = new Map<string, { stage1: number; stage2: number; use_case?: string }>();
   for (const ix of interactions) {
     map.set(ix.id, {
       stage1: ix.stage1_latency_ms ?? 0,
       stage2: ix.stage2_latency_ms ?? 0,
+      use_case: ix.use_case,
     });
   }
   return map;
@@ -59,85 +68,99 @@ function avgLatency(
   return {
     stage1:
       s1.length > 0
-        ? Math.round(s1.reduce((a, ix) => a + (ix.stage1_latency_ms ?? 0), 0) / s1.length)
+        ? s1.reduce((a, ix) => a + (ix.stage1_latency_ms ?? 0), 0) / s1.length
         : 0,
     stage2:
       s2.length > 0
-        ? Math.round(s2.reduce((a, ix) => a + (ix.stage2_latency_ms ?? 0), 0) / s2.length)
+        ? s2.reduce((a, ix) => a + (ix.stage2_latency_ms ?? 0), 0) / s2.length
         : 0,
   };
 }
 
 // ── Map an API flag to the MonitorEvent shape ─────────────────────────────────
-function flagToEvent(
-  f: ApiFlag,
-  latencyMap: Map<string, { stage1: number; stage2: number }>,
+function flagsToEvent(
+  flags: ApiFlag[],
+  latencyMap: Map<string, { stage1: number; stage2: number; use_case?: string }>,
 ): MonitorEvent {
-  const action = f.action_taken.toLowerCase();
+  const f = flags[0]!;
+
+  const actions = flags.map(fl => fl.action_taken.toLowerCase());
   const status: Status =
-    action === "block" ? "block"
-    : action === "escalate" ? "escalate"
-    : action === "allow" ? "pass"
-    : "patch";
+    actions.includes("block") ? "block"
+      : actions.includes("escalate") ? "escalate"
+        : actions.includes("allow") ? "pass"
+          : "patch";
 
-  const categories = f.categories
-    .map((c) => {
+  const catSet = new Set<"Performance" | "Cost" | "Responsibility">();
+  for (const fl of flags) {
+    for (const c of fl.categories) {
       const lc = c.toLowerCase();
-      if (lc === "performance") return "Performance" as const;
-      if (lc === "cost") return "Cost" as const;
-      if (lc === "responsibility") return "Responsibility" as const;
-      return null;
-    })
-    .filter(Boolean) as ("Performance" | "Cost" | "Responsibility")[];
+      if (lc === "performance") catSet.add("Performance");
+      if (lc === "cost") catSet.add("Cost");
+      if (lc === "responsibility") catSet.add("Responsibility");
+    }
+  }
+  const categories = Array.from(catSet);
 
-  const ts = f.created_at ? f.created_at.slice(11, 19) : "--:--:--";
+  const ts = f.created_at
+    ? new Date(f.created_at).toLocaleTimeString("en-GB", { timeZone: "Asia/Kolkata" })
+    : "--:--:--";
 
-  // Pull real latency from the joined interaction record
-  const latency = latencyMap.get(f.interaction_id) ?? { stage1: 0, stage2: 0 };
+  const interaction = latencyMap.get(f.interaction_id);
+  const latency = interaction ?? { stage1: 0, stage2: 0 };
+
+  const reason = flags.length > 1
+    ? "Multiple violations:\n" + flags.map((fl) => `• ${fl.reason}`).join("\n")
+    : f.reason;
+
+  const combinedSpans = flags.map(fl => fl.span).filter(Boolean).join(" ... ");
+  const confidence = Math.max(...flags.map(fl => fl.confidence ?? 0));
 
   return {
-    id: f.id,
+    id: f.interaction_id,
     ts,
-    useCase: f.interaction_id, // fallback — overridden if we have the full interaction
+    useCase: interaction?.use_case ?? f.interaction_id,
     org: "live",
     status,
     categories,
-    response: f.span ?? "(no span recorded)",
-    flagged: f.span ?? "",
-    reason: f.reason,
-    stage1: Math.round(latency.stage1),
-    stage2: Math.round(latency.stage2),
-    confidence: f.confidence,
+    response: combinedSpans || "(no span recorded)",
+    flagged: combinedSpans,
+    reason,
+    stage1: latency.stage1,
+    stage2: latency.stage2,
+    confidence,
   };
 }
 
 function LatencyStrip({ stage1, stage2 }: { stage1: number; stage2: number }) {
-  const s1Display = stage1 > 0 ? `${stage1}ms` : "—";
-  const s2Display = stage2 > 0 ? `${stage2}ms` : "—";
+  const s1Display = stage1 > 0 ? (stage1 < 1 ? "<1ms" : `${Math.round(stage1)}ms`) : "—";
+  const s2Display = stage2 > 0 ? (stage2 < 1 ? "<1ms" : `${Math.round(stage2)}ms`) : "—";
   const isLive = stage1 > 0 || stage2 > 0;
 
   return (
-    <div className="flex flex-wrap items-center gap-x-6 gap-y-2 border-b border-border bg-surface-muted px-6 py-2 text-xs">
-      <span className="inline-flex items-center gap-1.5 font-medium text-muted-foreground">
-        <Zap className="size-3.5 text-primary" />
-        Inline inspection
-      </span>
-      <span className="text-muted-foreground">
-        Stage 1 checks:{" "}
-        <span className={cn("tabular font-semibold", isLive ? "text-foreground" : "text-muted-foreground")}>
-          {s1Display}
+    <div className="border-b border-border bg-surface-muted">
+      <div className="mx-auto flex w-full max-w-[1400px] flex-wrap items-center gap-x-6 gap-y-2 px-6 py-2 text-xs">
+        <span className="inline-flex items-center gap-1.5 font-medium text-muted-foreground">
+          <Zap className="size-3.5 text-primary" />
+          Inline inspection
         </span>
-      </span>
-      <span className="h-3 w-px bg-border" />
-      <span className="text-muted-foreground">
-        Stage 2 checks:{" "}
-        <span className={cn("tabular font-semibold", isLive ? "text-foreground" : "text-muted-foreground")}>
-          {s2Display}
+        <span className="text-muted-foreground">
+          Stage 1 checks:{" "}
+          <span className={cn("tabular font-semibold", isLive ? "text-foreground" : "text-muted-foreground")}>
+            {s1Display}
+          </span>
         </span>
-      </span>
-      <span className="ml-auto text-muted-foreground">
-        {isLive ? "rolling avg · last 20 requests" : "p99 budget 400ms"}
-      </span>
+        <span className="h-3 w-px bg-border" />
+        <span className="text-muted-foreground">
+          Stage 2 checks:{" "}
+          <span className={cn("tabular font-semibold", isLive ? "text-foreground" : "text-muted-foreground")}>
+            {s2Display}
+          </span>
+        </span>
+        <span className="ml-auto text-muted-foreground">
+          {isLive ? "Rolling Average · Last 20 Requests" : "p99 budget 400ms"}
+        </span>
+      </div>
     </div>
   );
 }
@@ -166,8 +189,18 @@ function MonitorPage() {
         // Build interaction latency lookup
         const latencyMap = buildLatencyMap(liveInteractions ?? []);
 
-        // Map flags → events with real latency data
-        const liveEvents = liveFlags.map((f) => flagToEvent(f, latencyMap));
+        // Group flags by interaction_id
+        const flagsByIx = new Map<string, ApiFlag[]>();
+        for (const f of liveFlags) {
+          const group = flagsByIx.get(f.interaction_id) ?? [];
+          group.push(f);
+          flagsByIx.set(f.interaction_id, group);
+        }
+
+        // Map grouped flags → events with real latency data
+        const liveEvents = Array.from(flagsByIx.values()).map((group) =>
+          flagsToEvent(group, latencyMap)
+        );
         setEvents(liveEvents);
 
         // Update rolling average latency display
@@ -254,10 +287,17 @@ function MonitorPage() {
               <thead>
                 <tr className="border-b border-border bg-surface-muted text-left text-xs font-medium tracking-wide text-muted-foreground uppercase">
                   <th className="px-4 py-2.5 font-medium">Time</th>
-                  <th className="px-4 py-2.5 font-medium">Use case</th>
-                  <th className="hidden px-4 py-2.5 font-medium md:table-cell">Organization</th>
+                  <th className="px-4 py-2.5 font-medium">
+                    <div className="flex items-center gap-1.5">
+                      Use case
+                      <span title="The specific AI application or policy profile governing this request." className="flex">
+                        <Info className="size-3.5 text-muted-foreground/70 cursor-help" />
+                      </span>
+                    </div>
+                  </th>
                   <th className="hidden px-4 py-2.5 font-medium lg:table-cell">Flags</th>
                   <th className="px-4 py-2.5 font-medium">Status</th>
+                  <th className="px-4 py-2.5 font-medium">Confidence</th>
                   <th className="w-8" />
                 </tr>
               </thead>
@@ -274,10 +314,7 @@ function MonitorPage() {
                     <td className="tabular px-4 py-3 font-mono text-xs text-muted-foreground">
                       {e.ts}
                     </td>
-                    <td className="px-4 py-3 font-medium">{e.useCase}</td>
-                    <td className="hidden px-4 py-3 text-muted-foreground md:table-cell">
-                      {e.org}
-                    </td>
+                    <td className="px-4 py-3 font-medium">{formatUseCase(e.useCase)}</td>
                     <td className="hidden px-4 py-3 lg:table-cell">
                       <div className="flex flex-wrap gap-1">
                         {e.categories.length ? (
@@ -289,6 +326,9 @@ function MonitorPage() {
                     </td>
                     <td className="px-4 py-3">
                       <StatusBadge status={e.status} />
+                    </td>
+                    <td className="tabular px-4 py-3 text-muted-foreground">
+                      {e.confidence.toFixed(2)}
                     </td>
                     <td className="px-2 text-muted-foreground">
                       <ChevronRight className="size-4" />
@@ -315,7 +355,7 @@ function DetailPanel({ event, onClose }: { event: MonitorEvent; onClose: () => v
         <div className="flex items-start justify-between gap-4">
           <div>
             <p className="text-xs tracking-wide text-muted-foreground uppercase">Response review</p>
-            <h2 className="mt-1 text-base font-semibold">{event.useCase}</h2>
+            <h2 className="mt-1 text-base font-semibold">{formatUseCase(event.useCase)}</h2>
             <p className="tabular mt-0.5 font-mono text-xs text-muted-foreground">
               {event.org} · {event.ts}
             </p>
@@ -362,12 +402,12 @@ function DetailPanel({ event, onClose }: { event: MonitorEvent; onClose: () => v
           <div className="grid grid-cols-3 gap-3 border-t border-border pt-3">
             <Metric
               label="Stage 1"
-              value={event.stage1 > 0 ? `${event.stage1}ms` : "—"}
+              value={event.stage1 > 0 ? (event.stage1 < 1 ? "<1ms" : `${Math.round(event.stage1)}ms`) : "—"}
               live={event.stage1 > 0}
             />
             <Metric
               label="Stage 2"
-              value={event.stage2 > 0 ? `${event.stage2}ms` : "—"}
+              value={event.stage2 > 0 ? (event.stage2 < 1 ? "<1ms" : `${Math.round(event.stage2)}ms`) : "—"}
               live={event.stage2 > 0}
             />
             <Metric label="Confidence" value={event.confidence.toFixed(2)} />

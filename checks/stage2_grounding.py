@@ -103,7 +103,7 @@ async def run(response: str, rag_context: str, policy: dict) -> CheckResult:
                 f"(similarity={worst_score:.2f}, threshold={threshold:.2f}): "
                 f"'{worst_sentence[:120]}'"
             ),
-            confidence=round(1.0 - worst_score, 3),
+            confidence=min(1.0, round(1.0 - worst_score, 3)),
             span=worst_sentence[:200],
             check_name="grounding",
             latency_ms=elapsed_ms
