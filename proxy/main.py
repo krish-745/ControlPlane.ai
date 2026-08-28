@@ -258,6 +258,121 @@ async def chat(
     return JSONResponse(status_code=200, content=response_payload)
 
 
+@app.post("/v1/evaluate")
+async def evaluate(
+    request: Request,
+    background_tasks: BackgroundTasks,
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Pure evaluation endpoint. 
+    Accepts `prompt` and `ai_response` and evaluates them, bypassing the internal LLM.
+    """
+    body = await request.json()
+    prompt: str = body.get("prompt", "")
+    ai_response: str = body.get("ai_response", "")
+    rag_context: str = body.get("rag_context", "")
+    tool_name: str | None = body.get("tool_name")
+    tool_args: dict = body.get("tool_args", {})
+
+    org_id, use_case, header_agent_id = _extract_context(request)
+    agent_id = header_agent_id or body.get("agent_id")
+    policy = await get_active_policy(org_id, use_case, db)
+    interaction_id = uuid.uuid4()
+
+    # ── Stage 1: Inline checks on Prompt ──────────────────────────────────────
+    s1_t0 = time.perf_counter()
+    s1_results: list[CheckResult] = [
+        stage1_pii.run(prompt, policy),
+        stage1_injection.run(prompt, policy),
+    ]
+    s1_latency = (time.perf_counter() - s1_t0) * 1000
+    s1_agg = aggregate_stage1(s1_results, policy)
+
+    if s1_agg.decision == Decision.BLOCK:
+        background_tasks.add_task(
+            _persist_interaction,
+            interaction_id, org_id, use_case, agent_id,
+            prompt, ai_response, "BLOCK", s1_latency, None, None,
+            s1_agg.flags, None, "evaluation_api",
+        )
+        return JSONResponse(
+            status_code=403,
+            content={
+                "error": "policy_violation",
+                "stage": 1,
+                "reason": s1_agg.block_reason,
+                "interaction_id": str(interaction_id),
+                "decision": "BLOCK",
+            },
+        )
+
+    # ── Stage 2: Checks on AI Response ────────────────────────────────────────
+    s2_t0 = time.perf_counter()
+    s2_results: list[CheckResult] = []
+
+    if tool_name and agent_id:
+        s2_results.append(await stage2_loop.run(agent_id, tool_name, tool_args, policy))
+
+    s2_results.append(await stage2_grounding.run(ai_response, rag_context, policy))
+    s2_results.append(await stage2_toxicity.run(ai_response, policy))
+    
+    # Run Stage 1 checks against the AI response as well (PII, Injection)
+    t0_pii = time.perf_counter()
+    pii_res = stage1_pii.run(ai_response, policy)
+    pii_res.check_name = "pii"
+    pii_res.latency_ms = (time.perf_counter() - t0_pii) * 1000
+    s2_results.append(pii_res)
+    
+    t0_inj = time.perf_counter()
+    inj_res = stage1_injection.run(ai_response, policy)
+    inj_res.check_name = "injection"
+    inj_res.latency_ms = (time.perf_counter() - t0_inj) * 1000
+    s2_results.append(inj_res)
+
+    s2_latency = (time.perf_counter() - s2_t0) * 1000
+    s2_agg = aggregate_stage2(s2_results, policy)
+
+    # Persist everything
+    background_tasks.add_task(
+        _persist_interaction,
+        interaction_id, org_id, use_case, agent_id,
+        prompt, ai_response,
+        "ALLOW", s1_latency,
+        s2_agg.decision.value, s2_latency,
+        s2_agg.flags, None, "evaluation_api",
+    )
+
+    response_payload = {
+        "interaction_id": str(interaction_id),
+        "prompt": prompt,
+        "response": ai_response,
+        "stage1": {"decision": "ALLOW", "latency_ms": round(s1_latency, 2)},
+        "stage2": {
+            "decision": s2_agg.decision.value,
+            "latency_ms": round(s2_latency, 2),
+            "check_latencies_ms": {
+                r.check_name: round(r.latency_ms, 2) if r.latency_ms is not None else 0
+                for r in s2_results if r.check_name
+            },
+            "flags": [
+                {
+                    "categories": f.categories,
+                    "reason": f.reason,
+                    "confidence": f.confidence,
+                    "span": f.span,
+                }
+                for f in s2_agg.flags
+            ],
+        },
+    }
+
+    if s2_agg.decision == Decision.BLOCK:
+        return JSONResponse(status_code=429, content={**response_payload, "blocked": True})
+
+    return JSONResponse(status_code=200, content=response_payload)
+
+
 # ── Policy management routes ──────────────────────────────────────────────────
 @app.post("/policy/config")
 async def create_policy(request: Request, db: AsyncSession = Depends(get_db)):

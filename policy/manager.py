@@ -101,7 +101,7 @@ DEMO_PROFILES: list[dict] = [
         "on_violation": {
             "performance": "escalate",
             "responsibility": "block",
-            "cost": "escalate",
+            "cost": "block",
         },
         "custom_rules": {},
     },
