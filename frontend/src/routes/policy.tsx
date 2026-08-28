@@ -90,7 +90,7 @@ function PolicyPage() {
   // Load policy from backend when org/use-case changes
   useEffect(() => {
     const key = USE_CASE_KEYS[useCase] ?? "internal_knowledge_assistant";
-    fetchPolicy("demo", key).then((policy) => {
+    fetchPolicy(org, key).then((policy) => {
       if (policy) {
         setBackendOnline(true);
         const t = policy.thresholds ?? {};
@@ -101,8 +101,19 @@ function PolicyPage() {
           const mapped = Math.round(50 + ((sim - 0.4) / 0.55) * 550);
           setBudget([Math.min(600, Math.max(50, mapped))]);
         }
-        if (typeof t.loop_count_max === "number") {
-          setChecks((prev) => ({ ...prev, loop: (t.loop_count_max as number) > 0 }));
+        if (policy.checks_enabled) {
+          setChecks(policy.checks_enabled as Record<string, boolean>);
+        } else {
+          // Default fallback
+          const defaultChecks = Object.fromEntries(CHECKS.map((c) => [c.key, c.on]));
+          if (typeof t.loop_count_max === "number") {
+            defaultChecks.loop = (t.loop_count_max as number) > 0;
+          }
+          setChecks(defaultChecks);
+        }
+        
+        if (policy.latency_budget_ms) {
+          setBudget([policy.latency_budget_ms]);
         }
       } else if (policy !== undefined) {
         setBackendOnline(true);
@@ -117,9 +128,16 @@ function PolicyPage() {
     const key = USE_CASE_KEYS[useCase] ?? "internal_knowledge_assistant";
     // Map budget back to similarity threshold
     const sim = parseFloat((0.4 + (((budget[0] ?? 260) - 50) / 550) * 0.55).toFixed(2));
-    const result = await updatePolicy("demo", key, {
-      grounding_similarity_min: sim,
-      loop_count_max: checks["loop"] ? 3 : 0,
+    
+    const result = await updatePolicy({
+      org_id: org,
+      use_case: key,
+      latency_budget_ms: budget[0],
+      checks_enabled: checks,
+      thresholds: {
+        grounding_similarity_min: sim,
+        loop_count_max: checks["loop"] ? 3 : 0,
+      }
     });
     setSaveStatus(result ? "saved" : "error");
     setTimeout(() => setSaveStatus("idle"), 2500);

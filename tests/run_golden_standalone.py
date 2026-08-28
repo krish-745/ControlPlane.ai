@@ -278,12 +278,17 @@ RAG_REVENUE = "Our Q3 revenue was $4.2M, up 12% year-over-year."
 async def run_tests():
     results = []
 
-    def record(name: str, passed: bool, detail: str = ""):
-        status = "✅ PASS" if passed else "❌ FAIL"
-        print(f"  {status}  {name}")
+    def record(name, passed, info="", cat="Performance"):
+        results.append({
+            "name": name,
+            "pass": bool(passed),
+            "cat": cat,
+            "info": info
+        })
+        icon = "✅ PASS" if passed else "❌ FAIL"
+        print(f"  {icon}  {name}")
         if not passed:
-            print(f"         ↳ {detail}")
-        results.append(passed)
+            print(f"         ↳ {info}")
 
     print("\n" + "=" * 65)
     print("  ControlPlane.ai — Golden Test Suite (standalone)")
@@ -378,7 +383,7 @@ async def run_tests():
            f"grnd.passed={grnd.passed} cats={grnd.categories}")
 
     # ── Summary ───────────────────────────────────────────────────────────────
-    passed = sum(results)
+    passed = sum(r["pass"] for r in results)
     total = len(results)
     pct = passed / total * 100
     print(f"\n{'=' * 65}")
@@ -386,8 +391,10 @@ async def run_tests():
     target_met = passed >= 10
     print(f"  Target (≥90%): {'✅ MET' if target_met else '❌ NOT MET'}")
     print(f"{'=' * 65}\n")
-    return 0 if target_met else 1
+    return results
 
 
 if __name__ == "__main__":
-    sys.exit(asyncio.run(run_tests()))
+    results = asyncio.run(run_tests())
+    passed = sum(r["pass"] for r in results)
+    sys.exit(0 if passed >= 10 else 1)
