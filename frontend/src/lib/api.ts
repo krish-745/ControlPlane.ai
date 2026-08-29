@@ -11,7 +11,7 @@
 
 const BASE: string =
   typeof window === "undefined"
-    ? "http://20.6.130.181:8000/api"
+    ? "http://20.6.130.181:8000"
     : "/api";
 
 async function get<T>(
