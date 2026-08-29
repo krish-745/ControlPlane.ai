@@ -120,7 +120,6 @@ function flagsToEvent(
     id: f.interaction_id,
     ts,
     useCase: interaction?.use_case ?? f.interaction_id,
-    org: "live",
     status,
     categories,
     response: combinedSpans || "(no span recorded)",
@@ -365,7 +364,7 @@ function DetailPanel({ event, onClose }: { event: MonitorEvent; onClose: () => v
             <p className="text-xs tracking-wide text-muted-foreground uppercase">Response review</p>
             <h2 className="mt-1 text-base font-semibold">{formatUseCase(event.useCase)}</h2>
             <p className="tabular mt-0.5 font-mono text-xs text-muted-foreground">
-              {event.org} · {event.ts}
+              {event.ts}
             </p>
           </div>
           <button

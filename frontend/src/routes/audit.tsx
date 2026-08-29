@@ -1,4 +1,4 @@
-﻿import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useMemo, useState } from "react";
 import { Download, Search, WifiOff } from "lucide-react";
 import {
@@ -9,7 +9,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { StatusBadge } from "@/components/status-badge";
-import { AUDIT_ROWS, ORGANIZATIONS } from "@/lib/controlplane-data";
+import { AUDIT_ROWS } from "@/lib/controlplane-data";
 import { fetchInteractions, type ApiInteraction } from "@/lib/api";
 
 export const Route = createFileRoute("/audit")({
@@ -37,7 +37,7 @@ const CATEGORIES = ["Performance", "Cost", "Responsibility"] as const;
 type AuditRow = {
   id: string;
   ts: string;
-  org: string;
+
   useCase: string;
   category: string;
   action: string;
@@ -61,7 +61,7 @@ function interactionToRow(i: ApiInteraction): AuditRow {
   return {
     id: i.id.slice(0, 12),
     ts: i.created_at.slice(0, 19).replace("T", " "),
-    org: "demo",
+
     useCase: i.use_case,
     category: "Performance",   // the interactions endpoint doesn't expose category; flags do
     action,
@@ -71,7 +71,7 @@ function interactionToRow(i: ApiInteraction): AuditRow {
 }
 
 function AuditPage() {
-  const [org, setOrg] = useState("all");
+
   const [cat, setCat] = useState("all");
   const [q, setQ] = useState("");
   const [liveRows, setLiveRows] = useState<AuditRow[] | null>(null);
@@ -97,7 +97,7 @@ function AuditPage() {
   const staticRows: AuditRow[] = AUDIT_ROWS.map((r) => ({
     id: r.id,
     ts: r.ts,
-    org: r.org,
+
     useCase: r.useCase,
     category: r.category,
     action: r.action,
@@ -111,21 +111,21 @@ function AuditPage() {
     () =>
       sourceRows.filter(
         (r) =>
-          (org === "all" || r.org === org) &&
+
           (cat === "all" || r.category === cat) &&
           (q === "" ||
             `${r.id} ${r.useCase} ${r.action}`.toLowerCase().includes(q.toLowerCase())),
       ),
-    [sourceRows, org, cat, q],
+    [sourceRows, cat, q],
   );
 
   function handleExport() {
-    const header = "timestamp,id,org,use_case,category,action,confidence";
+    const header = "timestamp,id,use_case,category,action,confidence";
     const csv = [
       header,
       ...rows.map(
         (r) =>
-          `"${r.ts}","${r.id}","${r.org}","${r.useCase}","${r.category}","${r.action}",${r.confidence.toFixed(2)}`,
+          `"${r.ts}","${r.id}","${r.useCase}","${r.category}","${r.action}",${r.confidence.toFixed(2)}`,
       ),
     ].join("\n");
     const blob = new Blob([csv], { type: "text/csv" });
@@ -162,20 +162,7 @@ function AuditPage() {
       </div>
 
       <div className="mt-4 flex flex-wrap items-center gap-2">
-        <Select value={org} onValueChange={setOrg}>
-          <SelectTrigger className="h-9 w-[220px] bg-surface text-sm">
-            <SelectValue placeholder="Organization" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">All organizations</SelectItem>
-            {ORGANIZATIONS.map((o) => (
-              <SelectItem key={o} value={o}>
-                {o}
-              </SelectItem>
-            ))}
-            {backendOnline && <SelectItem value="demo">demo (live)</SelectItem>}
-          </SelectContent>
-        </Select>
+
 
         <Select value={cat} onValueChange={setCat}>
           <SelectTrigger className="h-9 w-[180px] bg-surface text-sm">
@@ -208,7 +195,7 @@ function AuditPage() {
             <tr className="border-b border-border bg-surface-muted text-left text-[11px] font-medium tracking-wide text-muted-foreground uppercase">
               <th className="px-3 py-2 font-medium">Timestamp</th>
               <th className="px-3 py-2 font-medium">Event</th>
-              <th className="px-3 py-2 font-medium">Organization</th>
+
               <th className="px-3 py-2 font-medium">Use case</th>
               <th className="px-3 py-2 font-medium">Category</th>
               <th className="px-3 py-2 font-medium">Action taken</th>
@@ -225,7 +212,7 @@ function AuditPage() {
                   {r.ts}
                 </td>
                 <td className="px-3 py-1.5 font-mono text-xs text-muted-foreground">{r.id}</td>
-                <td className="px-3 py-1.5 whitespace-nowrap">{r.org}</td>
+
                 <td className="px-3 py-1.5 whitespace-nowrap">{r.useCase}</td>
                 <td className="px-3 py-1.5 text-muted-foreground">{r.category}</td>
                 <td className="px-3 py-1.5">

@@ -11,7 +11,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { StatusBadge, CategoryPill } from "@/components/status-badge";
-import { ORGANIZATIONS, USE_CASES } from "@/lib/controlplane-data";
+import { USE_CASES } from "@/lib/controlplane-data";
 import { cn } from "@/lib/utils";
 import { fetchPolicy, updatePolicy } from "@/lib/api";
 
@@ -22,7 +22,7 @@ export const Route = createFileRoute("/policy")({
       {
         name: "description",
         content:
-          "Tune latency budgets, active checks and jurisdiction rules per organization and use case.",
+          "Tune latency budgets, active checks and jurisdiction rules per use case.",
       },
       { property: "og:title", content: "Policy Configuration — ControlPlane" },
       {
@@ -77,7 +77,7 @@ const JURISDICTIONS = [
 ];
 
 function PolicyPage() {
-  const [org, setOrg] = useState<string>(ORGANIZATIONS[0]);
+
   const [useCase, setUseCase] = useState<string>(USE_CASES[0]);
   const [budget, setBudget] = useState([260]);
   const [checks, setChecks] = useState(() =>
@@ -90,7 +90,7 @@ function PolicyPage() {
   // Load policy from backend when org/use-case changes
   useEffect(() => {
     const key = USE_CASE_KEYS[useCase] ?? "internal_knowledge_assistant";
-    fetchPolicy(org, key).then((policy) => {
+    fetchPolicy("demo", key).then((policy) => {
       if (policy) {
         setBackendOnline(true);
         const t = policy.thresholds ?? {};
@@ -121,7 +121,7 @@ function PolicyPage() {
         setBackendOnline(false);
       }
     });
-  }, [org, useCase]);
+  }, [useCase]);
 
   async function handleSave() {
     setSaveStatus("saving");
@@ -130,7 +130,7 @@ function PolicyPage() {
     const sim = parseFloat((0.4 + (((budget[0] ?? 260) - 50) / 550) * 0.55).toFixed(2));
     
     const result = await updatePolicy({
-      org_id: org,
+      org_id: "demo",
       use_case: key,
       latency_budget_ms: budget[0],
       checks_enabled: checks,
@@ -193,21 +193,7 @@ function PolicyPage() {
         </div>
       </div>
 
-      <div className="mt-6 grid gap-4 sm:grid-cols-2 lg:max-w-2xl">
-        <Field label="Organization">
-          <Select value={org} onValueChange={setOrg}>
-            <SelectTrigger className="w-full bg-surface">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {ORGANIZATIONS.map((o) => (
-                <SelectItem key={o} value={o}>
-                  {o}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </Field>
+      <div className="mt-6 lg:max-w-md">
         <Field label="Use case">
           <Select value={useCase} onValueChange={setUseCase}>
             <SelectTrigger className="w-full bg-surface">
@@ -265,9 +251,6 @@ function PolicyPage() {
 
         <section className="h-fit rounded-xl border border-border bg-surface p-5 shadow-card">
           <h2 className="text-sm font-semibold">Jurisdiction rules</h2>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Inherited from the organization's residency settings.
-          </p>
           <div className="mt-4 flex flex-wrap gap-2">
             {JURISDICTIONS.map((j) => (
               <span
