@@ -33,35 +33,10 @@ from proxy.llm_router import complete
 # ── Lifespan: startup / shutdown ─────────────────────────────────────────────
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Run heavy startup tasks in the background so Uvicorn can bind to the port immediately
-    async def _init_background():
-        try:
-            # Seed demo profiles
-            async with AsyncSessionLocal() as db:
-                await seed_demo_profiles(db)
-            
-            # Pre-warm models in a threadpool so it doesn't block the main event loop
-            if settings.app_env != "test":
-                import asyncio
-                loop = asyncio.get_running_loop()
-                def _warm():
-                    from checks.stage2_grounding import _get_model
-                    from checks.stage2_toxicity import _get_classifier as _get_tox_classifier
-                    from checks.stage2_bias import _get_classifier as _get_bias_classifier
-                    g_model = _get_model()
-                    t_model = _get_tox_classifier()
-                    b_model = _get_bias_classifier()
-                    g_model.encode(["warmup"])
-                    t_model("warmup")
-                    b_model("warmup", candidate_labels=["test"])
-                    print("[OK] Models pre-warmed in background.")
-                await loop.run_in_executor(None, _warm)
-        except Exception as e:
-            print(f"Background initialization error: {e}")
-
-    import asyncio
-    asyncio.create_task(_init_background())
-
+    # Seed demo profiles on startup
+    async with AsyncSessionLocal() as db:
+        await seed_demo_profiles(db)
+        
     yield
     await close_redis()
 

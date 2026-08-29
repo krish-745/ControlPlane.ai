@@ -20,6 +20,7 @@ class Settings(BaseSettings):
     anthropic_api_key: str = ""
     groq_api_key: str = ""
     gemini_api_key: str = ""
+    hf_api_token: str = ""
     
     # Default model for live completions
     llm_model: str = "gpt-4o-mini"
