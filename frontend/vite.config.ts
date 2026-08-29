@@ -5,12 +5,14 @@ import viteReact from "@vitejs/plugin-react";
 import tsconfigPaths from "vite-tsconfig-paths";
 import path from "path";
 import { fileURLToPath } from "url";
+import { nitro } from "nitro/vite";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 export default defineConfig({
   plugins: [
+    nitro(),
     // vite-tsconfig-paths must come first so @/ aliases are resolved
     // before @tanstack/react-start splits routes into virtual modules
     tsconfigPaths(),
