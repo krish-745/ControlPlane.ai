@@ -21,7 +21,7 @@ def _get_classifier():
         # Use GPU (device 0) if available, otherwise fallback to CPU (device -1)
         device = 0 if torch.cuda.is_available() else -1
         
-        # Switch to a PyTorch-native zero-shot classification model to avoid all the TensorFlow conversion errors
+        # Switch to a PyTorch-native zero-shot classification model
         # Using an encoder-only DistilBERT MNLI model which is extremely fast on CPU (<50ms) compared to BART
         _classifier = pipeline("zero-shot-classification", model="typeform/distilbert-base-uncased-mnli", device=device)
     return _classifier
@@ -34,14 +34,13 @@ async def run(text: str, policy: dict) -> CheckResult:
         return CheckResult(passed=True, check_name="bias", latency_ms=0)
 
     try:
-        import asyncio
         import time
         import re
         
         classifier = _get_classifier()
         
-        # Get dynamic threshold from environment or default to 0.75
-        threshold = float(os.environ.get("BIAS_THRESHOLD", "0.75"))
+        # Get dynamic threshold from environment or default to 0.60
+        threshold = float(os.environ.get("BIAS_THRESHOLD", "0.60"))
         
         t0 = time.perf_counter()
         
@@ -52,7 +51,6 @@ async def run(text: str, policy: dict) -> CheckResult:
             sentences = [text]
             
         # Run natively on the main thread, batched
-        # Use simpler, more direct labels for the zero-shot classifier to ensure it triggers correctly
         results = classifier(sentences, candidate_labels=["biased", "objective"])
         
         t_inference = (time.perf_counter() - t0) * 1000
@@ -62,16 +60,17 @@ async def run(text: str, policy: dict) -> CheckResult:
             # Find the score for the 'biased' label
             labels = result['labels']
             scores = result['scores']
-            bias_idx = labels.index("biased")
-            score = scores[bias_idx]
             
-            # The zero-shot MNLI models output lower absolute probabilities when forcing a binary choice
-            # We lower the default threshold dynamically to compensate
-            threshold = float(os.environ.get("BIAS_THRESHOLD", "0.60"))
+            try:
+                bias_idx = labels.index("biased")
+                score = scores[bias_idx]
+            except ValueError:
+                continue
+            
             is_biased = (score > threshold)
             
             if is_biased:
-                trigger_sentence = sentences[i]
+                trigger_sentence = sentences[i] if i < len(sentences) else text
                 return CheckResult(
                     passed=False,
                     categories=["responsibility"],
@@ -83,7 +82,8 @@ async def run(text: str, policy: dict) -> CheckResult:
                 )
                 
     except Exception as e:
-        print(f"[Bias Classifier Error] {e}")
+        import traceback
+        traceback.print_exc()
         return CheckResult(passed=True, check_name="bias")
 
     return CheckResult(passed=True, check_name="bias", latency_ms=t_inference)

@@ -7,7 +7,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_file=os.path.join(BASE_DIR, ".env"))
+    model_config = SettingsConfigDict(env_file=os.path.join(BASE_DIR, ".env"), extra="ignore")
 
     app_env: str = "development"
     log_level: str = "INFO"
@@ -20,6 +20,7 @@ class Settings(BaseSettings):
     anthropic_api_key: str = ""
     groq_api_key: str = ""
     gemini_api_key: str = ""
+    hf_api_token: str = ""
     
     # Default model for live completions
     llm_model: str = "gpt-4o-mini"
