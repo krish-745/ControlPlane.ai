@@ -20,7 +20,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from checks import stage1_injection, stage1_pii, stage2_grounding, stage2_loop, stage2_toxicity
+from checks import stage1_injection, stage1_pii, stage2_grounding, stage2_loop, stage2_toxicity, stage2_bias
 from db.models import Flag, Interaction
 from policy.aggregator import AggregatorDecision, CheckResult, Decision, aggregate_stage1, aggregate_stage2
 from policy.manager import get_active_policy, seed_demo_profiles, upsert_policy
@@ -39,12 +39,15 @@ async def lifespan(app: FastAPI):
     # Pre-warm the embedding model and toxicity classifier
     if settings.app_env != "test":
         from checks.stage2_grounding import _get_model
-        from checks.stage2_toxicity import _get_classifier
+        from checks.stage2_toxicity import _get_classifier as _get_tox_classifier
+        from checks.stage2_bias import _get_classifier as _get_bias_classifier
         g_model = _get_model()
-        t_model = _get_classifier()
+        t_model = _get_tox_classifier()
+        b_model = _get_bias_classifier()
         # Dummy forward pass to fully pre-warm the models on main thread
         g_model.encode(["warmup"])
         t_model("warmup")
+        b_model("warmup")
     yield
     await close_redis()
 
@@ -199,6 +202,7 @@ async def chat(
 
     s2_results.append(await stage2_grounding.run(llm_response.content, rag_context, policy))
     s2_results.append(await stage2_toxicity.run(llm_response.content, policy))
+    s2_results.append(await stage2_bias.run(llm_response.content, policy))
     
     # Stage 1 response checks (sync functions)
     t0_pii = time.perf_counter()
@@ -316,6 +320,7 @@ async def evaluate(
 
     s2_results.append(await stage2_grounding.run(ai_response, rag_context, policy))
     s2_results.append(await stage2_toxicity.run(ai_response, policy))
+    s2_results.append(await stage2_bias.run(ai_response, policy))
     
     # Run Stage 1 checks against the AI response as well (PII, Injection)
     t0_pii = time.perf_counter()
@@ -509,6 +514,7 @@ async def evaluate(
 
     s2_results.append(await stage2_grounding.run(ai_response, rag_context, policy))
     s2_results.append(await stage2_toxicity.run(ai_response, policy))
+    s2_results.append(await stage2_bias.run(ai_response, policy))
     
     # Run Stage 1 checks against the AI response as well (PII, Injection)
     t0_pii = time.perf_counter()
