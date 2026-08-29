@@ -10,9 +10,9 @@
  */
 
 const BASE: string =
-  (typeof process !== "undefined" && process.env?.VITE_API_URL) ||
-  import.meta.env.VITE_API_URL ||
-  "/api";
+  typeof window === "undefined"
+    ? "http://20.6.130.181:8000/api"
+    : "/api";
 
 async function get<T>(
   path: string,
