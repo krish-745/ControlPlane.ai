@@ -9,11 +9,7 @@
  * callers can gracefully fall back to local mock data.
  */
 
-const BASE: string =
-  (typeof import.meta !== "undefined" &&
-    import.meta.env &&
-    (import.meta.env as Record<string, string>)["VITE_API_URL"]) ||
-  "/api";
+const BASE: string = import.meta.env.VITE_API_URL || "/api";
 
 async function get<T>(
   path: string,
