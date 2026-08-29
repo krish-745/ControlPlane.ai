@@ -2,12 +2,12 @@
 Application settings loaded from environment / .env file.
 All components import from here — single source of truth.
 """
-
+import os
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_file=".env", extra="ignore")
+    model_config = SettingsConfigDict(env_file=os.path.join(BASE_DIR, ".env"))
 
     app_env: str = "development"
     log_level: str = "INFO"
