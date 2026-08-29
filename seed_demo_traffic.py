@@ -198,17 +198,40 @@ def main():
             try:
                 r = client.post("/v1/chat", json=req["payload"], headers=headers)
                 use_case = req["headers"]["X-Use-Case"].replace("_", " ").title()
-                if r.status_code in (200, 429):
+                if r.status_code in (200, 429, 403):
                     data = r.json()
                     s1 = data.get("stage1", {}).get("latency_ms", 0)
                     s2 = data.get("stage2", {}).get("latency_ms", 0)
-                    decision = data.get("stage2", {}).get("decision", "ALLOW")
-                    icon = "✅" if decision == "ALLOW" else "⚠️ "
+                    
+                    if r.status_code == 403:
+                        decision = "BLOCK"
+                        icon = "🚫"
+                    else:
+                        decision = data.get("stage2", {}).get("decision", "ALLOW")
+                        icon = "✅" if decision == "ALLOW" else "⚠️ "
+                        
                     print(f"  [{i:02d}] {icon} {use_case:<35} S1:{s1:>5.1f}ms  S2:{s2:>6.1f}ms")
                     passed += 1
-                elif r.status_code == 403:
-                    print(f"  [{i:02d}] 🚫 {use_case:<35} (Stage 1 blocked)")
-                    passed += 1
+
+                    # Randomly assign a human review to populate ground truth
+                    import random
+                    ix_id = data.get("interaction_id")
+                    if ix_id:
+                        review_status = None
+                        if decision in ("BLOCK", "ESCALATE"):
+                            if random.random() < 0.15:
+                                review_status = "OVERTURNED"
+                            else:
+                                review_status = "AGREED"
+                        else:
+                            if random.random() < 0.05:
+                                review_status = "MISSED_VIOLATION"
+                        
+                        if review_status:
+                            try:
+                                client.post(f"/v1/interactions/{ix_id}/review", json={"status": review_status})
+                            except Exception:
+                                pass
                 else:
                     print(f"  [{i:02d}] ❓ {use_case:<35} HTTP {r.status_code}")
             except Exception as e:

@@ -25,6 +25,7 @@ _PATTERNS: dict[str, re.Pattern] = {
     "aws_access_key": re.compile(r"AKIA[0-9A-Z]{16}"),
     "ssn": re.compile(r"\b(?!000|666|9\d{2})\d{3}-(?!00)\d{2}-(?!0000)\d{4}\b"),
     "email_address": re.compile(r"\b[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}\b"),
+    "phone_number": re.compile(r"(?:\+?\d{1,3}[-.\s]?)?\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4}"),
 }
 
 

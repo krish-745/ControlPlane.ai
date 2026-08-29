@@ -64,6 +64,7 @@ class Interaction(Base):
     stage2_decision: Mapped[str | None] = mapped_column(String(32), nullable=True)  # ALLOW | ESCALATE
     stage2_latency_ms: Mapped[float | None] = mapped_column(Float, nullable=True)
     llm_backend: Mapped[str] = mapped_column(String(32), default="mock")  # mock | live
+    human_review: Mapped[str | None] = mapped_column(String(32), nullable=True)  # AGREED | OVERTURNED | MISSED_VIOLATION
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), index=True
     )

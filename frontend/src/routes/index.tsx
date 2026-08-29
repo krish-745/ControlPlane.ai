@@ -4,7 +4,7 @@ import { X, Zap, ChevronRight, WifiOff, Info } from "lucide-react";
 import { StatusBadge, CategoryPill } from "@/components/status-badge";
 import { cn } from "@/lib/utils";
 import { makeEvent, seedEvents, type MonitorEvent, type Status } from "@/lib/controlplane-data";
-import { fetchFlags, fetchInteractions, type ApiFlag, type ApiInteraction } from "@/lib/api";
+import { fetchFlags, fetchInteractions, submitReview, type ApiFlag, type ApiInteraction } from "@/lib/api";
 
 export const Route = createFileRoute("/")({
   head: () => ({
@@ -129,6 +129,7 @@ function flagsToEvent(
     stage1: latency.stage1,
     stage2: latency.stage2,
     confidence,
+    humanReview: f.human_review,
   };
 }
 
@@ -174,7 +175,7 @@ function MonitorPage() {
 
   // Poll live flags + interactions from the backend every 3.8 s
   useEffect(() => {
-    let mockCounter = 0;
+    let mockCounter = 12;
 
     async function poll() {
       // Fetch both endpoints in parallel
@@ -340,7 +341,7 @@ function MonitorPage() {
           </div>
         </div>
 
-        {selected && <DetailPanel event={selected} onClose={() => setSelectedId(null)} />}
+        {selected && <DetailPanel key={selected.id} event={selected} onClose={() => setSelectedId(null)} />}
       </div>
     </div>
   );
@@ -348,6 +349,13 @@ function MonitorPage() {
 
 function DetailPanel({ event, onClose }: { event: MonitorEvent; onClose: () => void }) {
   const parts = event.flagged ? event.response.split(event.flagged) : [event.response];
+  const [reviewState, setReviewState] = useState<string | null>(event.humanReview ?? null);
+
+  async function handleReview(status: string) {
+    setReviewState(status);
+    event.humanReview = status;
+    await submitReview(event.id, status);
+  }
 
   return (
     <aside className="w-full shrink-0 xl:w-[420px]">
@@ -413,6 +421,30 @@ function DetailPanel({ event, onClose }: { event: MonitorEvent; onClose: () => v
             <Metric label="Confidence" value={event.confidence.toFixed(2)} />
           </div>
         </dl>
+        
+        <div className="mt-6 border-t border-border pt-4">
+          <p className="mb-3 text-xs tracking-wide text-muted-foreground uppercase">Human Review</p>
+          <div className="flex gap-2">
+            {event.status === "pass" ? (
+              <button
+                onClick={() => handleReview("MISSED_VIOLATION")}
+                disabled={reviewState !== null}
+                className="rounded border border-border bg-surface px-3 py-1.5 text-xs font-medium transition-colors hover:bg-secondary disabled:opacity-50"
+              >
+                {reviewState === "MISSED_VIOLATION" ? "Marked as Missed" : "Flag Missed Violation"}
+              </button>
+            ) : (
+              <button
+                onClick={() => handleReview("OVERTURNED")}
+                disabled={reviewState !== null}
+                className="rounded border border-border bg-block/10 px-3 py-1.5 text-xs font-medium text-block transition-colors hover:bg-block/20 disabled:opacity-50"
+              >
+                {reviewState === "OVERTURNED" ? "Overturned" : "Overturn (False Positive)"}
+              </button>
+
+            )}
+          </div>
+        </div>
       </div>
     </aside>
   );
