@@ -9,14 +9,18 @@
  * callers can gracefully fall back to local mock data.
  */
 
-const BASE: string = import.meta.env.VITE_API_URL || "/api";
+const BASE: string =
+  (typeof process !== "undefined" && process.env?.VITE_API_URL) ||
+  import.meta.env.VITE_API_URL ||
+  "/api";
 
 async function get<T>(
   path: string,
   params?: Record<string, string | number>,
 ): Promise<T | undefined> {
   try {
-    const url = new URL(`${BASE}${path}`, window.location.href);
+    const base = typeof window !== "undefined" ? window.location.href : BASE;
+    const url = new URL(`${BASE}${path}`, base);
     if (params) {
       Object.entries(params).forEach(([k, v]) => url.searchParams.set(k, String(v)));
     }
