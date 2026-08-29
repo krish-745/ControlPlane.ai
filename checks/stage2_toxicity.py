@@ -6,6 +6,7 @@ This is highly performant (<50ms) and keeps all data completely private.
 """
 
 from policy.aggregator import CheckResult
+import time
 
 _classifier = None
 
