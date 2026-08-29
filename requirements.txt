@@ -8,6 +8,7 @@ asyncpg==0.29.0
 sqlalchemy[asyncio]==2.0.31
 alembic==1.13.2
 redis[hiredis]==5.0.7
+sentence-transformers==3.0.1
 streamlit==1.35.0
 pandas==2.2.2
 plotly==5.22.0
