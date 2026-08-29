@@ -24,6 +24,16 @@ def preload_models():
         print(f"Error loading toxicity model: {e}")
         sys.exit(1)
 
+    print("3/3: Downloading bias classifier model...")
+    try:
+        from transformers import pipeline
+        # This will download the model weights for the bias classifier
+        bias_classifier = pipeline("zero-shot-classification", model="valhalla/distilbart-mnli-12-3")
+        print("[OK] bias model loaded successfully.")
+    except Exception as e:
+        print(f"Error loading bias model: {e}")
+        sys.exit(1)
+
     print("All models successfully pre-downloaded!")
 
 if __name__ == "__main__":
