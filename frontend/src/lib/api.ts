@@ -9,10 +9,7 @@
  * callers can gracefully fall back to local mock data.
  */
 
-const BASE: string =
-  typeof window === "undefined"
-    ? "http://20.6.130.181:8000"
-    : "/api";
+const BASE: string = import.meta.env.VITE_API_URL || "http://127.0.0.1:8000";
 
 async function get<T>(
   path: string,
