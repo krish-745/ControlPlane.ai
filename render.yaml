@@ -1,0 +1,21 @@
+services:
+  - type: web
+    name: controlplane-api
+    env: python
+    buildCommand: "pip install -r requirements.txt && python preload_models.py"
+    startCommand: "uvicorn proxy.main:app --host 0.0.0.0 --port 8000"
+    envVars:
+      - key: APP_ENV
+        value: production
+      - key: LLM_BACKEND
+        value: mock
+      - key: LLM_MODEL
+        value: gpt-4o-mini
+      - key: DATABASE_URL
+        sync: false
+      - key: REDIS_URL_OVERRIDE
+        sync: false
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: ANTHROPIC_API_KEY
+        sync: false
