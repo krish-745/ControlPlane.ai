@@ -47,7 +47,7 @@ async def lifespan(app: FastAPI):
         # Dummy forward pass to fully pre-warm the models on main thread
         g_model.encode(["warmup"])
         t_model("warmup")
-        b_model("warmup")
+        b_model("warmup", candidate_labels=["test"])
     yield
     await close_redis()
 
