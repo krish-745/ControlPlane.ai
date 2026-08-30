@@ -1,4 +1,5 @@
 <p align="center">
+  <img src="https://img.shields.io/badge/Python-3776AB?style=for-the-badge&logo=python&logoColor=white" alt="Python" />
   <img src="https://img.shields.io/badge/FastAPI-009688?style=for-the-badge&logo=fastapi&logoColor=white" alt="FastAPI" />
   <img src="https://img.shields.io/badge/React_19-61DAFB?style=for-the-badge&logo=react&logoColor=black" alt="React" />
   <img src="https://img.shields.io/badge/PostgreSQL-4169E1?style=for-the-badge&logo=postgresql&logoColor=white" alt="PostgreSQL" />
@@ -47,7 +48,7 @@ ControlPlane.ai acts as a reverse proxy between clients and LLMs, enforcing conf
 
 1. **Accepts** the incoming chat request.
 2. **Evaluates Stage 1 (Inline)**: Runs lightning-fast regex checks for PII and Prompt Injection (<1ms) on the prompt. If failed, it instantly blocks the request (403).
-3. **Routes via LiteLLM**: If allowed, forwards the request to the live LLM (or mock backend).
+3. **Routes Request**: If allowed, forwards the request to the live LLM (or mock backend).
 4. **Evaluates Stage 2 (Async)**: While the response streams back, it runs deeper ML-based checks on the response text (Grounding, Toxicity, Bias, Loop Detection).
 5. **Aggregates Decisions**: The Policy Aggregator reads per-org rules from Postgres to decide if a violation should result in a BLOCK or ESCALATE.
 6. **Logs & Audits**: Persists all interactions, latencies, and flags asynchronously for the dashboard.
@@ -55,7 +56,7 @@ ControlPlane.ai acts as a reverse proxy between clients and LLMs, enforcing conf
 ```mermaid
 flowchart TB
     Client[Client App]
-    LLM[LLM API / LiteLLM]
+    LLM[LLM API]
     Agg[Policy Aggregator]
     DB[(Postgres)]
     
@@ -91,7 +92,7 @@ flowchart TB
 | **Org & Use-Case Routing** | Dynamically apply different thresholds and actions (BLOCK vs ESCALATE) based on the specific organization and use case (e.g. `customer_support_bot` vs `internal_knowledge_assistant`). |
 | **Agent Loop Prevention** | Stateful tracking of tool calls to detect and block runaway agents before they drain your API budget. |
 | **Local, Private Models** | Uses lightweight local models (`all-MiniLM-L6-v2` for grounding, `toxic-bert` for toxicity, `distilbert-mnli` for bias) running locally—no third-party data sharing. |
-| **Universal LLM Support** | Powered by LiteLLM, supporting OpenAI, Anthropic, Groq, Gemini, and more, plus a highly configurable mock mode for predictable demos. |
+| **Universal LLM Support** | Supporting OpenAI, Anthropic, Groq, Gemini, and more, plus a highly configurable mock mode for predictable demos. |
 | **Live Audit Dashboard** | React 19 + TanStack Start UI providing real-time visibility into traffic, policy violations, and trust metrics. |
 
 ---
@@ -114,7 +115,6 @@ ControlPlane.ai is built for speed and reliability:
 |---|---|
 | **FastAPI** | High-performance async API server |
 | **SQLAlchemy + asyncpg** | Async ORM and PostgreSQL driver |
-| **LiteLLM** | Universal router for LLM provider APIs |
 | **Redis** | Policy caching and stateful loop counting |
 | **PyTorch** | Local ML models for grounding, toxicity, and bias |
 
@@ -155,7 +155,7 @@ ControlPlane.ai/
 │   └── package.json
 ├── proxy/             # FastAPI backend application
 │   ├── main.py        # API routing and interaction logic
-│   ├── llm_router.py  # LiteLLM integration (live + mock)
+│   ├── llm_router.py  # LLM integration (live + mock)
 │   ├── config.py      # Environment configurations
 │   └── cache.py       # Redis caching layer
 ├── policy/            # Core policy engine
