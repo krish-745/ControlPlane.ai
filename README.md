@@ -304,5 +304,5 @@ python demo_runner.py
 ---
 
 <p align="center">
-  <b>Ensuring AI Safety, One Token at a Time</b>
+  <b>Built with ❤️ for a secure AI future</b>
 </p>
