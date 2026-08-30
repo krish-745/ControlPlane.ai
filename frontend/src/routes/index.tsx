@@ -77,19 +77,18 @@ function avgLatency(
   };
 }
 
-// ── Map an API flag to the MonitorEvent shape ─────────────────────────────────
-function flagsToEvent(
+// ── Map an interaction + its flags to the MonitorEvent shape ─────────────────────────────────
+function interactionToEvent(
+  interaction: ApiInteraction,
   flags: ApiFlag[],
-  latencyMap: Map<string, { stage1: number; stage2: number; use_case?: string }>,
 ): MonitorEvent {
-  const f = flags[0]!;
-
-  const actions = flags.map(fl => fl.action_taken.toLowerCase());
+  const actions = flags.map((fl) => fl.action_taken.toLowerCase());
   const status: Status =
     actions.includes("block") ? "block"
       : actions.includes("escalate") ? "escalate"
-        : actions.includes("allow") ? "pass"
-          : "patch";
+        : flags.length > 0 && actions.includes("allow") ? "pass" // if flagged but allowed
+        : flags.length > 0 ? "patch"
+        : "pass"; // No flags at all = pass
 
   const catSet = new Set<"Performance" | "Cost" | "Responsibility">();
   for (const fl of flags) {
@@ -102,33 +101,30 @@ function flagsToEvent(
   }
   const categories = Array.from(catSet);
 
-  const ts = f.created_at
-    ? new Date(f.created_at).toLocaleTimeString("en-GB", { timeZone: "Asia/Kolkata" })
-    : "--:--:--";
-
-  const interaction = latencyMap.get(f.interaction_id);
-  const latency = interaction ?? { stage1: 0, stage2: 0 };
+  const ts = new Date(interaction.created_at).toLocaleTimeString("en-GB", {
+    timeZone: "Asia/Kolkata",
+  });
 
   const reason = flags.length > 1
     ? "Multiple violations:\n" + flags.map((fl) => `• ${fl.reason}`).join("\n")
-    : f.reason;
+    : flags.length === 1 ? flags[0]!.reason : "No policy violations detected.";
 
-  const combinedSpans = flags.map(fl => fl.span).filter(Boolean).join(" ... ");
-  const confidence = Math.max(...flags.map(fl => fl.confidence ?? 0));
+  const combinedSpans = flags.map((fl) => fl.span).filter(Boolean).join(" ... ");
+  const confidence = flags.length > 0 ? Math.max(...flags.map((fl) => fl.confidence ?? 0)) : 0.99;
 
   return {
-    id: f.interaction_id,
+    id: interaction.id,
     ts,
-    useCase: interaction?.use_case ?? f.interaction_id,
+    useCase: interaction.use_case,
     status,
     categories,
     response: combinedSpans || "(no span recorded)",
     flagged: combinedSpans,
     reason,
-    stage1: latency.stage1,
-    stage2: latency.stage2,
+    stage1: interaction.stage1_latency_ms ?? 0,
+    stage2: interaction.stage2_latency_ms ?? 0,
     confidence,
-    humanReview: f.human_review,
+    humanReview: interaction.human_review,
   };
 }
 
@@ -183,38 +179,36 @@ function MonitorPage() {
         fetchInteractions("demo", 40),
       ]);
 
-      if (liveFlags && liveFlags.length > 0) {
+      // If there are ANY interactions, we should show them (whether they have flags or not)
+      if (liveInteractions && liveInteractions.length > 0) {
         setBackendOnline(true);
 
-        // Build interaction latency lookup
-        const latencyMap = buildLatencyMap(liveInteractions ?? []);
-
-        // Group flags by interaction_id
+        // Group flags by interaction_id for quick lookup
         const flagsByIx = new Map<string, ApiFlag[]>();
-        for (const f of liveFlags) {
-          const group = flagsByIx.get(f.interaction_id) ?? [];
-          group.push(f);
-          flagsByIx.set(f.interaction_id, group);
+        if (liveFlags) {
+          for (const f of liveFlags) {
+            const group = flagsByIx.get(f.interaction_id) ?? [];
+            group.push(f);
+            flagsByIx.set(f.interaction_id, group);
+          }
         }
 
-        // Map grouped flags → events with real latency data
-        const liveEvents = Array.from(flagsByIx.values()).map((group) =>
-          flagsToEvent(group, latencyMap)
+        // Map every interaction to an event (some will have flags, some will just be 'pass')
+        const liveEvents = liveInteractions.map((ix) =>
+          interactionToEvent(ix, flagsByIx.get(ix.id) ?? [])
         );
         setEvents(liveEvents);
 
         // Update rolling average latency display
-        if (liveInteractions && liveInteractions.length > 0) {
-          setAvgLatencies(avgLatency(liveInteractions));
-        }
-      } else if (liveFlags !== undefined) {
-        // Backend responded but no flags yet — just show empty state
+        setAvgLatencies(avgLatency(liveInteractions));
+      } else if (liveInteractions !== undefined) {
+        // Backend responded but NO interactions at all yet — just show empty state
         setBackendOnline(true);
-        setEvents([]); // Clear it completely
+        setEvents([]); 
       } else {
         // Fetch returned undefined — backend offline
         setBackendOnline(false);
-        setEvents([]); // Don't show demo data
+        setEvents([]); 
       }
     }
 
