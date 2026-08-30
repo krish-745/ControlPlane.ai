@@ -28,7 +28,7 @@ def print_header():
 
 def main():
     print_header()
-    url = "http://127.0.0.1:8000/v1/chat"
+    url = "http://20.6.130.181:8000/v1/chat"
     
     # State
     current_profile = "customer_support_bot"

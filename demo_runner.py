@@ -19,7 +19,7 @@ import sys
 import time
 import httpx
 
-PROXY_URL = "http://localhost:8000"
+PROXY_URL = "http://20.6.130.181:8000"
 
 SCENARIOS = {
     1: {
