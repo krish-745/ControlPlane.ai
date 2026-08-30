@@ -208,17 +208,13 @@ function MonitorPage() {
           setAvgLatencies(avgLatency(liveInteractions));
         }
       } else if (liveFlags !== undefined) {
-        // Backend responded but no flags yet — still online, show demo data
+        // Backend responded but no flags yet — just show empty state
         setBackendOnline(true);
-        mockCounter += 1;
-        const at = new Date(Date.now() - Math.floor(Math.random() * 800));
-        setEvents((prev) => [makeEvent(mockCounter, at), ...prev].slice(0, 15));
+        setEvents([]); // Clear it completely
       } else {
         // Fetch returned undefined — backend offline
         setBackendOnline(false);
-        mockCounter += 1;
-        const at = new Date(Date.now() - Math.floor(Math.random() * 1500));
-        setEvents((prev) => [makeEvent(mockCounter, at), ...prev].slice(0, 15));
+        setEvents([]); // Don't show demo data
       }
     }
 

@@ -66,3 +66,6 @@ docker-compose.override.yml
 *.swo
 *~
 .DS_Store
+
+wipe_db.py
+demo_video_cli.py
