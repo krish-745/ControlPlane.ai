@@ -47,7 +47,7 @@ Most "AI oversight" projects just offer detection. **ControlPlane.ai offers gove
 ControlPlane.ai acts as a reverse proxy between clients and LLMs, enforcing configurable policies across three stages:
 
 1. **Accepts** the incoming chat request.
-2. **Evaluates Stage 1 (Inline)**: Runs lightning-fast regex checks for PII and Prompt Injection (< 50ms) on the prompt. If failed, it instantly blocks the request (403).
+2. **Evaluates Stage 1 (Inline)**: Runs lightning-fast regex checks for PII and Prompt Injection (<1ms) on the prompt. If failed, it instantly blocks the request (403).
 3. **Routes via LiteLLM**: If allowed, forwards the request to the live LLM (or mock backend).
 4. **Evaluates Stage 2 (Async)**: While the response streams back, it runs deeper ML-based checks on the response text (Grounding, Toxicity, Bias, Loop Detection).
 5. **Aggregates Decisions**: The Policy Aggregator reads per-org rules from Postgres to decide if a violation should result in a BLOCK or ESCALATE.
@@ -88,7 +88,7 @@ flowchart TB
 
 | Feature | Description |
 |---|---|
-| **Multi-Stage Policy Engine** | Ultra-fast Stage 1 (<50ms) for prompt safety; thorough Stage 2 (<400ms) for response quality, grounding, and bias. |
+| **Multi-Stage Policy Engine** | Ultra-fast Stage 1 (<1ms) for prompt safety; thorough Stage 2 (<400ms) for response quality, grounding, and bias. |
 | **Org & Use-Case Routing** | Dynamically apply different thresholds and actions (BLOCK vs ESCALATE) based on the specific organization and use case (e.g. `customer_support_bot` vs `internal_knowledge_assistant`). |
 | **Agent Loop Prevention** | Stateful tracking of tool calls to detect and block runaway agents before they drain your API budget. |
 | **Local, Private Models** | Uses lightweight local models (`all-MiniLM-L6-v2` for grounding, `toxic-bert` for toxicity, `distilbert-mnli` for bias) running locally—no third-party data sharing. |
@@ -131,7 +131,7 @@ ControlPlane.ai is built for speed and reliability:
 
 ## Check Pipeline
 
-### Stage 1 (Inline — < 50ms)
+### Stage 1 (Inline — <1ms)
 - **PII & Secrets**: Regex and Luhn algorithm checks for API keys, SSNs, Credit Cards, Emails, and Phone Numbers.
 - **Prompt Injection**: Detects jailbreaks (DAN), role overrides, and system prompt extraction attempts.
 
