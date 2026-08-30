@@ -740,32 +740,32 @@ async def get_trust_metrics(db: AsyncSession = Depends(get_db)):
     if total_flags > 0:
         fpr = (fp / total_flags) * 100.0
 
-    precision = tp / (tp + fp) if (tp + fp) > 0 else 1.0
-    recall = tp / (tp + fn) if (tp + fn) > 0 else 1.0
+    precision = tp / (tp + fp) if (tp + fp) > 0 else 0.0
+    recall = tp / (tp + fn) if (tp + fn) > 0 else 0.0
 
-    # Apply slight variations per category for UI realism
+    # Real category metrics (no fake UI multipliers)
     categories = [
         {
             "name": "Performance", 
-            "precision": max(0, min(1, precision * 0.98)), 
-            "recall": max(0, min(1, recall * 0.95))
+            "precision": precision, 
+            "recall": recall
         },
         {
             "name": "Cost", 
-            "precision": max(0, min(1, precision * 0.92)), 
-            "recall": max(0, min(1, recall * 0.88))
+            "precision": precision, 
+            "recall": recall
         },
         {
             "name": "Responsibility", 
-            "precision": max(0, min(1, precision * 1.0)), 
-            "recall": max(0, min(1, recall * 1.0))
+            "precision": precision, 
+            "recall": recall
         },
     ]
 
     for cat in categories:
         p = cat["precision"]
         r = cat["recall"]
-        cat["f1"] = (2 * p * r) / (p + r) if (p + r) > 0 else 0
+        cat["f1"] = (2 * p * r) / (p + r) if (p + r) > 0 else 0.0
 
     # 4. Run golden tests for live accuracy
     from tests.run_golden_standalone import run_tests

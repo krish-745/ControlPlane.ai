@@ -166,7 +166,7 @@ function LatencyStrip({ stage1, stage2 }: { stage1: number; stage2: number }) {
 }
 
 function MonitorPage() {
-  const [events, setEvents] = useState<MonitorEvent[]>(() => seedEvents());
+  const [events, setEvents] = useState<MonitorEvent[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [filter, setFilter] = useState<Status | "all">("all");
   const [backendOnline, setBackendOnline] = useState<boolean | null>(null);

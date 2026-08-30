@@ -74,7 +74,7 @@ function AuditPage() {
 
   const [cat, setCat] = useState("all");
   const [q, setQ] = useState("");
-  const [liveRows, setLiveRows] = useState<AuditRow[] | null>(null);
+  const [liveRows, setLiveRows] = useState<AuditRow[]>([]);
   const [backendOnline, setBackendOnline] = useState<boolean | null>(null);
 
   // Fetch live interactions once on mount
@@ -85,38 +85,24 @@ function AuditPage() {
         setLiveRows(data.map(interactionToRow));
       } else if (data !== undefined) {
         setBackendOnline(true);
-        setLiveRows(null); // empty — fall back to static rows
+        setLiveRows([]); 
       } else {
         setBackendOnline(false);
-        setLiveRows(null);
+        setLiveRows([]); 
       }
     });
   }, []);
 
-  // Map static AUDIT_ROWS to the same AuditRow type (they already match)
-  const staticRows: AuditRow[] = AUDIT_ROWS.map((r) => ({
-    id: r.id,
-    ts: r.ts,
-
-    useCase: r.useCase,
-    category: r.category,
-    action: r.action,
-    status: r.status,
-    confidence: r.confidence,
-  }));
-
-  const sourceRows = liveRows ?? staticRows;
-
   const rows = useMemo(
     () =>
-      sourceRows.filter(
+      liveRows.filter(
         (r) =>
 
           (cat === "all" || r.category === cat) &&
           (q === "" ||
             `${r.id} ${r.useCase} ${r.action}`.toLowerCase().includes(q.toLowerCase())),
       ),
-    [sourceRows, cat, q],
+    [liveRows, cat, q],
   );
 
   function handleExport() {
@@ -148,7 +134,7 @@ function AuditPage() {
         <div>
           <h1 className="text-lg font-semibold">Audit log</h1>
           <p className="mt-0.5 text-sm text-muted-foreground">
-            {rows.length} of {sourceRows.length} decisions · retained 24 months
+            {rows.length} of {liveRows.length} decisions · retained 24 months
             {backendOnline && <span className="ml-2 text-pass">· live</span>}
           </p>
         </div>
