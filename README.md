@@ -3,7 +3,6 @@
   <img src="https://img.shields.io/badge/React_19-61DAFB?style=for-the-badge&logo=react&logoColor=black" alt="React" />
   <img src="https://img.shields.io/badge/PostgreSQL-4169E1?style=for-the-badge&logo=postgresql&logoColor=white" alt="PostgreSQL" />
   <img src="https://img.shields.io/badge/Redis-DC382D?style=for-the-badge&logo=redis&logoColor=white" alt="Redis" />
-  <img src="https://img.shields.io/badge/LiteLLM-4285F4?style=for-the-badge&logoColor=white" alt="LiteLLM" />
 </p>
 
 # ControlPlane.ai — Real-Time AI Runtime Policy Engine
